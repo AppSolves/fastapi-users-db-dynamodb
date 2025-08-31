@@ -8,8 +8,8 @@
     <em>Ready-to-use and customizable users management for FastAPI</em>
 </p>
 
-[![build](https://github.com/fastapi-users/fastapi-users-db-dynamodb/workflows/Build/badge.svg)](https://github.com/fastapi-users/fastapi-users/actions)
-[![codecov](https://codecov.io/gh/fastapi-users/fastapi-users-db-dynamodb/branch/master/graph/badge.svg)](https://codecov.io/gh/fastapi-users/fastapi-users-db-dynamodb)
+[![build](https://github.com/AppSolves/fastapi-users-db-dynamodb/workflows/Build/badge.svg)](https://github.com/fastapi-users/fastapi-users/actions)
+[![codecov](https://codecov.io/gh/AppSolves/fastapi-users-db-dynamodb/branch/master/graph/badge.svg)](https://codecov.io/gh/AppSolves/fastapi-users-db-dynamodb)
 [![PyPI version](https://badge.fury.io/py/fastapi-users-db-dynamodb.svg)](https://badge.fury.io/py/fastapi-users-db-dynamodb)
 [![Downloads](https://pepy.tech/badge/fastapi-users-db-dynamodb)](https://pepy.tech/project/fastapi-users-db-dynamodb)
 

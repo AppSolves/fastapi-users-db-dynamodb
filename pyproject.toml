@@ -1,5 +1,5 @@
 [tool.mypy]
-plugins = "sqlalchemy.ext.mypy.plugin"
+plugins = []
 
 [tool.pytest.ini_options]
 asyncio_mode = "strict"
@@ -24,9 +24,7 @@ path = "fastapi_users_db_dynamodb/__init__.py"
 [tool.hatch.envs.default]
 installer = "uv"
 dependencies = [
-    "aiosqlite",
-    "asyncpg",
-    "aiomysql",
+    "aioboto3",
     "pytest",
     "pytest-asyncio",
     "black",
@@ -37,7 +35,6 @@ dependencies = [
     "httpx",
     "asgi_lifespan",
     "ruff",
-    "sqlalchemy[asyncio,mypy]",
 ]
 
 [tool.hatch.envs.default.scripts]
@@ -86,9 +83,9 @@ classifiers = [
 requires-python = ">=3.9"
 dependencies = [
     "fastapi-users >= 10.0.0",
-    "sqlalchemy[asyncio] >=2.0.0,<2.1.0",
+    "aioboto3 >= 11.0.0",
 ]
 
 [project.urls]
 Documentation = "https://fastapi-users.github.io/fastapi-users"
-Source = "https://github.com/fastapi-users/fastapi-users-db-dynamodb"
+Source = "https://github.com/AppSolves/fastapi-users-db-dynamodb"

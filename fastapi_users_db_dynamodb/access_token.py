@@ -61,14 +61,14 @@ class DynamoDBAccessTokenDatabase(Generic[AP], AccessTokenDatabase[AP]):
         self._resource = dynamodb_resource
 
     @asynccontextmanager
-    async def _table(self):
+    async def _table(self, table_name: str):
         """Async context manager that yields a Table object."""
         if self._resource is not None:
-            table = await self._resource.Table(self.table_name)
+            table = await self._resource.Table(table_name)
             yield table
         else:
             async with self.session.resource("dynamodb") as dynamodb:
-                table = await dynamodb.Table(self.table_name)
+                table = await dynamodb.Table(table_name)
                 yield table
 
     def _item_to_access_token(self, item: dict[str, Any] | None) -> AP | None:
@@ -100,7 +100,7 @@ class DynamoDBAccessTokenDatabase(Generic[AP], AccessTokenDatabase[AP]):
         self, token: str, max_age: datetime | None = None
     ) -> AP | None:
         """Retrieve an access token by token string."""
-        async with self._table() as table:
+        async with self._table(self.table_name) as table:
             resp = await table.get_item(Key={"token": self._ensure_token(token)})
             item = resp.get("Item")
 
@@ -125,7 +125,7 @@ class DynamoDBAccessTokenDatabase(Generic[AP], AccessTokenDatabase[AP]):
         if isinstance(item.get("user_id"), uuid.UUID):
             item["user_id"] = str(item["user_id"])
 
-        async with self._table() as table:
+        async with self._table(self.table_name) as table:
             await table.put_item(Item=item)
 
             resp = await table.get_item(Key={"token": item["token"]})
@@ -153,7 +153,7 @@ class DynamoDBAccessTokenDatabase(Generic[AP], AccessTokenDatabase[AP]):
         if isinstance(token_dict.get("created_at"), datetime):
             token_dict["created_at"] = token_dict["created_at"].isoformat()
 
-        async with self._table() as table:
+        async with self._table(self.table_name) as table:
             await table.put_item(Item=token_dict)
 
             resp = await table.get_item(Key={"token": token_dict["token"]})
@@ -172,5 +172,5 @@ class DynamoDBAccessTokenDatabase(Generic[AP], AccessTokenDatabase[AP]):
         if token is None:
             raise ValueError("access_token has no 'token' field")
 
-        async with self._table() as table:
+        async with self._table(self.table_name) as table:
             await table.delete_item(Key={"token": self._ensure_token(token)})
