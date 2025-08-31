@@ -19,7 +19,7 @@ allow-direct-references = true
 [tool.hatch.version]
 source = "regex_commit"
 commit_extra_args = ["-e"]
-path = "fastapi_users_db_sqlalchemy/__init__.py"
+path = "fastapi_users_db_dynamodb/__init__.py"
 
 [tool.hatch.envs.default]
 installer = "uv"
@@ -41,17 +41,17 @@ dependencies = [
 ]
 
 [tool.hatch.envs.default.scripts]
-test = "pytest --cov=fastapi_users_db_sqlalchemy/ --cov-report=term-missing --cov-fail-under=100"
-test-cov-xml = "pytest --cov=fastapi_users_db_sqlalchemy/ --cov-report=xml --cov-fail-under=100"
+test = "pytest --cov=fastapi_users_db_dynamodb/ --cov-report=term-missing --cov-fail-under=100"
+test-cov-xml = "pytest --cov=fastapi_users_db_dynamodb/ --cov-report=xml --cov-fail-under=100"
 lint = [
   "ruff format . ",
   "ruff check --fix .",
-  "mypy fastapi_users_db_sqlalchemy/",
+  "mypy fastapi_users_db_dynamodb/",
 ]
 lint-check = [
   "ruff format --check .",
   "ruff check .",
-  "mypy fastapi_users_db_sqlalchemy/",
+  "mypy fastapi_users_db_dynamodb/",
 ]
 
 [tool.hatch.build.targets.sdist]
@@ -62,11 +62,11 @@ requires = ["hatchling", "hatch-regex-commit"]
 build-backend = "hatchling.build"
 
 [project]
-name = "fastapi-users-db-sqlalchemy"
+name = "fastapi-users-db-dynamodb"
 authors = [
-    { name = "François Voron", email = "fvoron@gmail.com" },
+    { name = "Kaan Gönüldinc", email = "contact@appsolves.dev" },
 ]
-description = "FastAPI Users database adapter for SQLAlchemy"
+description = "FastAPI Users database adapter for AWS DynamoDB"
 readme = "README.md"
 dynamic = ["version"]
 classifiers = [
@@ -91,4 +91,4 @@ dependencies = [
 
 [project.urls]
 Documentation = "https://fastapi-users.github.io/fastapi-users"
-Source = "https://github.com/fastapi-users/fastapi-users-db-sqlalchemy"
+Source = "https://github.com/fastapi-users/fastapi-users-db-dynamodb"

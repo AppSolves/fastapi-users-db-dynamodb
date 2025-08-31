@@ -12,9 +12,6 @@
 [![codecov](https://codecov.io/gh/fastapi-users/fastapi-users-db-dynamodb/branch/master/graph/badge.svg)](https://codecov.io/gh/fastapi-users/fastapi-users-db-dynamodb)
 [![PyPI version](https://badge.fury.io/py/fastapi-users-db-dynamodb.svg)](https://badge.fury.io/py/fastapi-users-db-dynamodb)
 [![Downloads](https://pepy.tech/badge/fastapi-users-db-dynamodb)](https://pepy.tech/project/fastapi-users-db-dynamodb)
-<p align="center">
-<a href="https://github.com/sponsors/frankie567"><img src="https://md-buttons.francoisvoron.com/button.svg?text=Buy%20me%20a%20coffee%20%E2%98%95%EF%B8%8F&bg=ef4444&w=200&h=50"></a>
-</p>
 
 ---
 
