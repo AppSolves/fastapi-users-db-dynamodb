@@ -1,89 +1,176 @@
-import uuid
-from datetime import datetime
-from typing import TYPE_CHECKING, Any, Generic, Optional
+"""FastAPI Users access token database adapter for AWS DynamoDB.
 
+This adapter mirrors the SQLAlchemy adapter's public API and return types as closely
+as reasonably possible while using DynamoDB via aioboto3.
+"""
+
+from __future__ import annotations
+
+import uuid
+from contextlib import asynccontextmanager
+from datetime import datetime
+from typing import TYPE_CHECKING, Any, Generic, get_type_hints
+
+import aioboto3
 from fastapi_users.authentication.strategy.db import AP, AccessTokenDatabase
 from fastapi_users.models import ID
-from sqlalchemy import ForeignKey, String, select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Mapped, declared_attr, mapped_column
 
-from fastapi_users_db_sqlalchemy.generics import GUID, TIMESTAMPAware, now_utc
+from fastapi_users_db_dynamodb.generics import GUID
 
 
-class SQLAlchemyBaseAccessTokenTable(Generic[ID]):
-    """Base SQLAlchemy access token table definition."""
+class DynamoDBBaseAccessTokenTable(Generic[ID]):
+    """Base access token table schema for DynamoDB."""
 
     __tablename__ = "accesstoken"
 
-    if TYPE_CHECKING:  # pragma: no cover
-        token: str
-        created_at: datetime
+    token: str
+    created_at: datetime
+    if TYPE_CHECKING:
         user_id: ID
-    else:
-        token: Mapped[str] = mapped_column(String(length=43), primary_key=True)
-        created_at: Mapped[datetime] = mapped_column(
-            TIMESTAMPAware(timezone=True), index=True, nullable=False, default=now_utc
-        )
 
 
-class SQLAlchemyBaseAccessTokenTableUUID(SQLAlchemyBaseAccessTokenTable[uuid.UUID]):
-    if TYPE_CHECKING:  # pragma: no cover
-        user_id: uuid.UUID
-    else:
-
-        @declared_attr
-        def user_id(cls) -> Mapped[GUID]:
-            return mapped_column(
-                GUID, ForeignKey("user.id", ondelete="cascade"), nullable=False
-            )
+class DynamoDBBaseAccessTokenTableUUID(DynamoDBBaseAccessTokenTable[uuid.UUID]):
+    user_id: GUID
 
 
-class SQLAlchemyAccessTokenDatabase(Generic[AP], AccessTokenDatabase[AP]):
+class DynamoDBAccessTokenDatabase(Generic[AP], AccessTokenDatabase[AP]):
     """
-    Access token database adapter for SQLAlchemy.
+    Access token database adapter for AWS DynamoDB using aioboto3.
 
-    :param session: SQLAlchemy session instance.
-    :param access_token_table: SQLAlchemy access token model.
+    :param session: aioboto3.Session instance (not an actual DynamoDB resource).
+    :param access_token_table: Python class used to construct returned objects (callable).
+    :param table_name: DynamoDB table name for access tokens.
+    :param dynamodb_resource: Optional aioboto3 resource object (async context manager result).
     """
+
+    session: aioboto3.Session
+    access_token_table: type[AP]
+    table_name: str
+    _resource: Any | None
 
     def __init__(
         self,
-        session: AsyncSession,
+        session: aioboto3.Session,
         access_token_table: type[AP],
+        table_name: str,
+        dynamodb_resource: Any | None = None,
     ):
         self.session = session
         self.access_token_table = access_token_table
+        self.table_name = table_name
+        self._resource = dynamodb_resource
+
+    @asynccontextmanager
+    async def _table(self):
+        """Async context manager that yields a Table object."""
+        if self._resource is not None:
+            table = await self._resource.Table(self.table_name)
+            yield table
+        else:
+            async with self.session.resource("dynamodb") as dynamodb:
+                table = await dynamodb.Table(self.table_name)
+                yield table
+
+    def _item_to_access_token(self, item: dict[str, Any] | None) -> AP | None:
+        """Convert a DynamoDB item (dict) to an instance of access_token_table (AP)."""
+        if item is None:
+            return None
+
+        try:
+            hints = get_type_hints(self.access_token_table)
+            if (
+                "user_id" in hints
+                and hints["user_id"] is uuid.UUID
+                and isinstance(item.get("user_id"), str)
+            ):
+                item = {**item, "user_id": uuid.UUID(item["user_id"])}
+
+            if "created_at" in item and isinstance(item["created_at"], str):
+                item["created_at"] = datetime.fromisoformat(item["created_at"])
+        except Exception:
+            pass
+
+        return self.access_token_table(**item)
+
+    def _ensure_token(self, token: Any) -> str:
+        """Normalize token to string for DynamoDB keys."""
+        return str(token)
 
     async def get_by_token(
-        self, token: str, max_age: Optional[datetime] = None
-    ) -> Optional[AP]:
-        statement = select(self.access_token_table).where(
-            self.access_token_table.token == token  # type: ignore
-        )
-        if max_age is not None:
-            statement = statement.where(
-                self.access_token_table.created_at >= max_age  # type: ignore
-            )
+        self, token: str, max_age: datetime | None = None
+    ) -> AP | None:
+        """Retrieve an access token by token string."""
+        async with self._table() as table:
+            resp = await table.get_item(Key={"token": self._ensure_token(token)})
+            item = resp.get("Item")
 
-        results = await self.session.execute(statement)
-        return results.scalar_one_or_none()
+            if item is None:
+                return None
+
+            if max_age is not None:
+                created_at = datetime.fromisoformat(item["created_at"])
+                if created_at < max_age:
+                    return None
+
+            return self._item_to_access_token(item)
 
     async def create(self, create_dict: dict[str, Any]) -> AP:
-        access_token = self.access_token_table(**create_dict)
-        self.session.add(access_token)
-        await self.session.commit()
-        await self.session.refresh(access_token)
+        """Create a new access token and return an instance of AP."""
+        item = dict(create_dict)
+
+        if "token" not in item or item["token"] is None:
+            item["token"] = uuid.uuid4().hex[:43]
+        if "created_at" not in item or not isinstance(item["created_at"], str):
+            item["created_at"] = datetime.utcnow().isoformat()
+        if isinstance(item.get("user_id"), uuid.UUID):
+            item["user_id"] = str(item["user_id"])
+
+        async with self._table() as table:
+            await table.put_item(Item=item)
+
+            resp = await table.get_item(Key={"token": item["token"]})
+            stored = resp.get("Item", item)
+
+        access_token = self._item_to_access_token(stored)
+        if access_token is None:
+            raise ValueError("Could not cast DB item to AccessToken model")
         return access_token
 
     async def update(self, access_token: AP, update_dict: dict[str, Any]) -> AP:
-        for key, value in update_dict.items():
-            setattr(access_token, key, value)
-        self.session.add(access_token)
-        await self.session.commit()
-        await self.session.refresh(access_token)
-        return access_token
+        """Update an existing access token."""
+
+        token_dict = (
+            access_token.dict()  # type: ignore
+            if hasattr(access_token, "dict") and callable(access_token.dict)  # type: ignore
+            else dict(access_token)
+            if isinstance(access_token, dict)
+            else vars(access_token)
+        )
+        token_dict = {**token_dict, **update_dict}  # type: ignore
+
+        if isinstance(token_dict.get("user_id"), uuid.UUID):
+            token_dict["user_id"] = str(token_dict["user_id"])
+        if isinstance(token_dict.get("created_at"), datetime):
+            token_dict["created_at"] = token_dict["created_at"].isoformat()
+
+        async with self._table() as table:
+            await table.put_item(Item=token_dict)
+
+            resp = await table.get_item(Key={"token": token_dict["token"]})
+            stored = resp.get("Item", token_dict)
+
+        updated = self._item_to_access_token(stored)
+        if updated is None:
+            raise ValueError("Could not cast DB item to AccessToken model")
+        return updated
 
     async def delete(self, access_token: AP) -> None:
-        await self.session.delete(access_token)
-        await self.session.commit()
+        """Delete an access token."""
+        token = getattr(access_token, "token", None) or (
+            access_token.get("token") if isinstance(access_token, dict) else None
+        )
+        if token is None:
+            raise ValueError("access_token has no 'token' field")
+
+        async with self._table() as table:
+            await table.delete_item(Key={"token": self._ensure_token(token)})

@@ -1,68 +1,84 @@
+"""FastAPI Users DynamoDB generics for UUID and timestamp handling.
+
+This module replaces SQLAlchemy-specific TypeDecorators with DynamoDB-friendly
+helpers while keeping the same public API for compatibility.
+"""
+
+from __future__ import annotations
+
 import uuid
 from datetime import datetime, timezone
-from typing import Optional
 
 from pydantic import UUID4
-from sqlalchemy import CHAR, TIMESTAMP, TypeDecorator
-from sqlalchemy.dialects.postgresql import UUID
 
 
-class GUID(TypeDecorator):  # pragma: no cover
+class GUID:
     """
     Platform-independent GUID type.
 
-    Uses PostgreSQL's UUID type, otherwise uses
-    CHAR(36), storing as regular strings.
+    Kept for API compatibility with the old SQLAlchemy-based code.
+    In DynamoDB, this behaves as a lightweight UUID validator/converter.
     """
 
-    class UUIDChar(CHAR):
-        python_type = UUID4  # type: ignore
+    python_type = UUID4
 
-    impl = UUIDChar
-    cache_ok = True
+    def __init__(self, *args, **kwargs):
+        """DynamoDB does not need type decorators, but we mimic SQLAlchemy API."""
+        pass
 
-    def load_dialect_impl(self, dialect):
-        if dialect.name == "postgresql":
-            return dialect.type_descriptor(UUID())
-        else:
-            return dialect.type_descriptor(CHAR(36))
-
-    def process_bind_param(self, value, dialect):
+    @staticmethod
+    def to_storage(value: uuid.UUID | str | None) -> str | None:
+        """Convert UUID or string to a DynamoDB-storable string."""
         if value is None:
-            return value
-        elif dialect.name == "postgresql":
-            return str(value)
-        else:
-            if not isinstance(value, uuid.UUID):
-                return str(uuid.UUID(value))
-            else:
-                return str(value)
+            return None
+        return str(value) if isinstance(value, uuid.UUID) else str(uuid.UUID(value))
 
-    def process_result_value(self, value, dialect):
+    @staticmethod
+    def from_storage(value: str | uuid.UUID | None) -> uuid.UUID | None:
+        """Convert a stored string back into a UUID object."""
         if value is None:
-            return value
-        else:
-            if not isinstance(value, uuid.UUID):
-                value = uuid.UUID(value)
-            return value
+            return None
+        return value if isinstance(value, uuid.UUID) else uuid.UUID(value)
 
 
-def now_utc():
+def now_utc() -> datetime:
+    """
+    Returns the current time in UTC with timezone awareness.
+    Equivalent to the old implementation.
+    """
     return datetime.now(timezone.utc)
 
 
-class TIMESTAMPAware(TypeDecorator):  # pragma: no cover
+class TIMESTAMPAware:
     """
-    MySQL and SQLite will always return naive-Python datetimes.
+    Kept for API compatibility.
 
-    We store everything as UTC, but we want to have
-    only offset-aware Python datetimes, even with MySQL and SQLite.
+    In SQLAlchemy, this handled database-specific timestamp behavior.
+    In DynamoDB, timestamps are stored as ISO 8601 strings and always
+    returned as timezone-aware datetimes.
     """
 
-    impl = TIMESTAMP
-    cache_ok = True
+    python_type = datetime
 
-    def process_result_value(self, value: Optional[datetime], dialect):
-        if value is not None and dialect.name != "postgresql":
-            return value.replace(tzinfo=timezone.utc)
-        return value
+    def __init__(self, *args, **kwargs):
+        """DynamoDB does not require dialect-level timestamp handling."""
+        pass
+
+    @staticmethod
+    def to_storage(value: datetime | None) -> str | None:
+        """Convert datetime to an ISO 8601 string for DynamoDB storage."""
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.isoformat()
+
+    @staticmethod
+    def from_storage(value: str | datetime | None) -> datetime | None:
+        """Convert stored ISO 8601 string to timezone-aware datetime."""
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        dt = datetime.fromisoformat(value)
+        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
