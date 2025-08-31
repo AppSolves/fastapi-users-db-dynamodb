@@ -1,12 +1,8 @@
-import os
+import uuid
 from typing import Any, Optional
 
 import pytest
 from fastapi_users import schemas
-
-DATABASE_URL = os.getenv(
-    "DATABASE_URL", "sqlite+aiosqlite:///./test-sqlalchemy-user.db"
-)
 
 
 class User(schemas.BaseUser):
@@ -45,3 +41,8 @@ def oauth_account2() -> dict[str, Any]:
         "account_id": "user_oauth2",
         "account_email": "king.arthur@camelot.bt",
     }
+
+
+@pytest.fixture
+def user_id() -> uuid.UUID:
+    return uuid.uuid4()

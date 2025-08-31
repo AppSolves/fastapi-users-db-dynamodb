@@ -35,6 +35,7 @@ dependencies = [
     "httpx",
     "asgi_lifespan",
     "ruff",
+    "moto[all]",
 ]
 
 [tool.hatch.envs.default.scripts]

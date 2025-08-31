@@ -2,40 +2,29 @@ import uuid
 from collections.abc import AsyncGenerator
 from datetime import datetime, timedelta, timezone
 
+import aioboto3
 import pytest
 import pytest_asyncio
+from moto import mock_aws
 from pydantic import UUID4
-from sqlalchemy import exc
-from sqlalchemy.ext.asyncio import (
-    AsyncEngine,
-    AsyncSession,
-    async_sessionmaker,
-    create_async_engine,
+
+from fastapi_users_db_dynamodb import DynamoDBBaseUserTableUUID, DynamoDBUserDatabase
+from fastapi_users_db_dynamodb.access_token import (
+    DynamoDBAccessTokenDatabase,
+    DynamoDBBaseAccessTokenTableUUID,
 )
-from sqlalchemy.orm import DeclarativeBase
-
-from fastapi_users_db_sqlalchemy import SQLAlchemyBaseUserTableUUID
-from fastapi_users_db_sqlalchemy.access_token import (
-    SQLAlchemyAccessTokenDatabase,
-    SQLAlchemyBaseAccessTokenTableUUID,
-)
-from tests.conftest import DATABASE_URL
 
 
-class Base(DeclarativeBase):
+class Base:
     pass
 
 
-class AccessToken(SQLAlchemyBaseAccessTokenTableUUID, Base):
+class AccessToken(DynamoDBBaseAccessTokenTableUUID, Base):
     pass
 
 
-class User(SQLAlchemyBaseUserTableUUID, Base):
+class User(DynamoDBBaseUserTableUUID, Base):
     pass
-
-
-def create_async_session_maker(engine: AsyncEngine):
-    return async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
 @pytest.fixture
@@ -44,88 +33,89 @@ def user_id() -> UUID4:
 
 
 @pytest_asyncio.fixture
-async def sqlalchemy_access_token_db(
+async def dynamodb_access_token_db(
     user_id: UUID4,
-) -> AsyncGenerator[SQLAlchemyAccessTokenDatabase[AccessToken], None]:
-    engine = create_async_engine(DATABASE_URL)
-    sessionmaker = create_async_session_maker(engine)
+) -> AsyncGenerator[DynamoDBAccessTokenDatabase[AccessToken]]:
+    with mock_aws():
+        session = aioboto3.Session()
+        user_table_name = "users_test"
+        token_table_name = "access_tokens_test"
 
-    async with engine.begin() as connection:
-        await connection.run_sync(Base.metadata.create_all)
-
-    async with sessionmaker() as session:
-        user = User(
-            id=user_id, email="lancelot@camelot.bt", hashed_password="guinevere"
+        user_db = DynamoDBUserDatabase(
+            session, DynamoDBBaseUserTableUUID, user_table_name
         )
-        session.add(user)
-        await session.commit()
+        user = await user_db.create(
+            {
+                "id": user_id,
+                "email": "lancelot@camelot.bt",
+                "hashed_password": "guinevere",
+            }
+        )
 
-        yield SQLAlchemyAccessTokenDatabase(session, AccessToken)
+        token_db = DynamoDBAccessTokenDatabase(session, AccessToken, token_table_name)
 
-    async with engine.begin() as connection:
-        await connection.run_sync(Base.metadata.drop_all)
+        # Vorherigen Token löschen, falls er existiert
+        token_obj = await token_db.get_by_token("TOKEN")
+        if token_obj:
+            await token_db.delete(token_obj)
+
+        yield token_db
+
+        token_obj = await token_db.get_by_token("TOKEN")
+        if token_obj:
+            await token_db.delete(token_obj)
+
+        await user_db.delete(user)
 
 
 @pytest.mark.asyncio
 async def test_queries(
-    sqlalchemy_access_token_db: SQLAlchemyAccessTokenDatabase[AccessToken],
+    dynamodb_access_token_db: DynamoDBAccessTokenDatabase[AccessToken],
     user_id: UUID4,
 ):
     access_token_create = {"token": "TOKEN", "user_id": user_id}
 
-    # Create
-    access_token = await sqlalchemy_access_token_db.create(access_token_create)
+    access_token = await dynamodb_access_token_db.create(access_token_create)
     assert access_token.token == "TOKEN"
     assert access_token.user_id == user_id
 
-    # Update
-    update_dict = {"created_at": datetime.now(timezone.utc)}
-    updated_access_token = await sqlalchemy_access_token_db.update(
-        access_token, update_dict
+    new_time = datetime.now(timezone.utc)
+    updated_access_token = await dynamodb_access_token_db.update(
+        access_token, {"created_at": new_time}
     )
-    assert updated_access_token.created_at.replace(microsecond=0) == update_dict[
-        "created_at"
-    ].replace(microsecond=0)
-
-    # Get by token
-    access_token_by_token = await sqlalchemy_access_token_db.get_by_token(
-        access_token.token
+    assert updated_access_token.created_at.replace(microsecond=0) == new_time.replace(
+        microsecond=0
     )
-    assert access_token_by_token is not None
 
-    # Get by token expired
-    access_token_by_token = await sqlalchemy_access_token_db.get_by_token(
+    token_obj = await dynamodb_access_token_db.get_by_token(access_token.token)
+    assert token_obj is not None
+
+    token_obj = await dynamodb_access_token_db.get_by_token(
         access_token.token, max_age=datetime.now(timezone.utc) + timedelta(hours=1)
     )
-    assert access_token_by_token is None
+    assert token_obj is None
 
-    # Get by token not expired
-    access_token_by_token = await sqlalchemy_access_token_db.get_by_token(
+    token_obj = await dynamodb_access_token_db.get_by_token(
         access_token.token, max_age=datetime.now(timezone.utc) - timedelta(hours=1)
     )
-    assert access_token_by_token is not None
+    assert token_obj is not None
 
-    # Get by token unknown
-    access_token_by_token = await sqlalchemy_access_token_db.get_by_token(
-        "NOT_EXISTING_TOKEN"
-    )
-    assert access_token_by_token is None
+    token_obj = await dynamodb_access_token_db.get_by_token("NOT_EXISTING_TOKEN")
+    assert token_obj is None
 
-    # Delete token
-    await sqlalchemy_access_token_db.delete(access_token)
-    deleted_access_token = await sqlalchemy_access_token_db.get_by_token(
-        access_token.token
-    )
-    assert deleted_access_token is None
+    await dynamodb_access_token_db.delete(access_token)
+    deleted_token = await dynamodb_access_token_db.get_by_token(access_token.token)
+    assert deleted_token is None
 
 
 @pytest.mark.asyncio
 async def test_insert_existing_token(
-    sqlalchemy_access_token_db: SQLAlchemyAccessTokenDatabase[AccessToken],
+    dynamodb_access_token_db: DynamoDBAccessTokenDatabase[AccessToken],
     user_id: UUID4,
 ):
     access_token_create = {"token": "TOKEN", "user_id": user_id}
-    await sqlalchemy_access_token_db.create(access_token_create)
 
-    with pytest.raises(exc.IntegrityError):
-        await sqlalchemy_access_token_db.create(access_token_create)
+    await dynamodb_access_token_db.create(access_token_create)
+
+    with pytest.raises(Exception):
+        await dynamodb_access_token_db.create(access_token_create)
