@@ -1,0 +1,94 @@
+[tool.mypy]
+plugins = "sqlalchemy.ext.mypy.plugin"
+
+[tool.pytest.ini_options]
+asyncio_mode = "strict"
+asyncio_default_fixture_loop_scope = "function"
+addopts = "--ignore=test_build.py"
+
+[tool.ruff]
+
+[tool.ruff.lint]
+extend-select = ["I", "UP"]
+
+[tool.hatch]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.version]
+source = "regex_commit"
+commit_extra_args = ["-e"]
+path = "fastapi_users_db_sqlalchemy/__init__.py"
+
+[tool.hatch.envs.default]
+installer = "uv"
+dependencies = [
+    "aiosqlite",
+    "asyncpg",
+    "aiomysql",
+    "pytest",
+    "pytest-asyncio",
+    "black",
+    "mypy",
+    "pytest-cov",
+    "pytest-mock",
+    "asynctest",
+    "httpx",
+    "asgi_lifespan",
+    "ruff",
+    "sqlalchemy[asyncio,mypy]",
+]
+
+[tool.hatch.envs.default.scripts]
+test = "pytest --cov=fastapi_users_db_sqlalchemy/ --cov-report=term-missing --cov-fail-under=100"
+test-cov-xml = "pytest --cov=fastapi_users_db_sqlalchemy/ --cov-report=xml --cov-fail-under=100"
+lint = [
+  "ruff format . ",
+  "ruff check --fix .",
+  "mypy fastapi_users_db_sqlalchemy/",
+]
+lint-check = [
+  "ruff format --check .",
+  "ruff check .",
+  "mypy fastapi_users_db_sqlalchemy/",
+]
+
+[tool.hatch.build.targets.sdist]
+support-legacy = true  # Create setup.py
+
+[build-system]
+requires = ["hatchling", "hatch-regex-commit"]
+build-backend = "hatchling.build"
+
+[project]
+name = "fastapi-users-db-sqlalchemy"
+authors = [
+    { name = "François Voron", email = "fvoron@gmail.com" },
+]
+description = "FastAPI Users database adapter for SQLAlchemy"
+readme = "README.md"
+dynamic = ["version"]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Development Status :: 5 - Production/Stable",
+    "Framework :: FastAPI",
+    "Framework :: AsyncIO",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Internet :: WWW/HTTP :: Session",
+]
+requires-python = ">=3.9"
+dependencies = [
+    "fastapi-users >= 10.0.0",
+    "sqlalchemy[asyncio] >=2.0.0,<2.1.0",
+]
+
+[project.urls]
+Documentation = "https://fastapi-users.github.io/fastapi-users"
+Source = "https://github.com/fastapi-users/fastapi-users-db-sqlalchemy"
