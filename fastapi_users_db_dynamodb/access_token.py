@@ -15,8 +15,6 @@ import aioboto3
 from fastapi_users.authentication.strategy.db import AP, AccessTokenDatabase
 from fastapi_users.models import ID
 
-from fastapi_users_db_dynamodb.generics import GUID
-
 
 class DynamoDBBaseAccessTokenTable(Generic[ID]):
     """Base access token table schema for DynamoDB."""
@@ -30,7 +28,7 @@ class DynamoDBBaseAccessTokenTable(Generic[ID]):
 
 
 class DynamoDBBaseAccessTokenTableUUID(DynamoDBBaseAccessTokenTable[uuid.UUID]):
-    user_id: GUID
+    user_id: uuid.UUID
 
 
 class DynamoDBAccessTokenDatabase(Generic[AP], AccessTokenDatabase[AP]):
