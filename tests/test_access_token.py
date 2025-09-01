@@ -1,4 +1,3 @@
-import uuid
 from collections.abc import AsyncGenerator
 from datetime import datetime, timedelta, timezone
 
@@ -6,7 +5,7 @@ import aioboto3
 import pytest
 import pytest_asyncio
 from moto import mock_aws
-from pydantic import UUID4
+from pydantic import UUID4, BaseModel
 
 from fastapi_users_db_dynamodb import DynamoDBBaseUserTableUUID, DynamoDBUserDatabase
 from fastapi_users_db_dynamodb._aioboto3_patch import *  # noqa: F403
@@ -18,7 +17,7 @@ from tests.conftest import DATABASE_REGION
 from tests.tables import ensure_table_exists
 
 
-class Base:
+class Base(BaseModel):
     pass
 
 
@@ -28,11 +27,6 @@ class AccessToken(DynamoDBBaseAccessTokenTableUUID, Base):
 
 class User(DynamoDBBaseUserTableUUID, Base):
     pass
-
-
-@pytest.fixture
-def user_id() -> UUID4:
-    return uuid.uuid4()
 
 
 @pytest_asyncio.fixture

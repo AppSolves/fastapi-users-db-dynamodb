@@ -4,6 +4,7 @@ import aioboto3
 import pytest
 import pytest_asyncio
 from moto import mock_aws
+from pydantic import BaseModel, ConfigDict, Field
 
 from fastapi_users_db_dynamodb import (
     UUID_ID,
@@ -16,12 +17,12 @@ from tests.conftest import DATABASE_REGION
 from tests.tables import ensure_table_exists
 
 
-class Base:
-    pass
+class Base(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
 class User(DynamoDBBaseUserTableUUID, Base):
-    first_name: str | None
+    first_name: str | None = Field(default=None, description="First name of the user")
 
 
 class OAuthBase:
@@ -33,8 +34,10 @@ class OAuthAccount(DynamoDBBaseOAuthAccountTableUUID, OAuthBase):
 
 
 class UserOAuth(DynamoDBBaseUserTableUUID, OAuthBase):
-    first_name: str | None
-    oauth_accounts: list[OAuthAccount]
+    first_name: str | None = Field(default=None, description="First name of the user")
+    oauth_accounts: list[OAuthAccount] = Field(
+        default_factory=list, description="Linked OAuth accounts"
+    )
 
 
 @pytest_asyncio.fixture
@@ -118,7 +121,7 @@ async def test_queries(dynamodb_user_db: DynamoDBUserDatabase[User, UUID_ID]):
         await dynamodb_user_db.get_by_oauth_account("foo", "bar")
     with pytest.raises(NotImplementedError):
         await dynamodb_user_db.add_oauth_account(user, {})
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(ValueError):
         oauth_account = OAuthAccount()
         await dynamodb_user_db.update_oauth_account(user, oauth_account, {})
 
@@ -161,23 +164,10 @@ async def test_queries_custom_fields(
 @pytest.mark.asyncio
 async def test_queries_oauth(
     dynamodb_user_db_oauth: DynamoDBUserDatabase[UserOAuth, UUID_ID],
+    oauth_account1,
+    oauth_account2,
 ):
     # Test OAuth accounts
-    oauth_account1 = {
-        "oauth_name": "service1",
-        "access_token": "TOKEN",
-        "expires_at": 1579000751,
-        "account_id": "user_oauth1",
-        "account_email": "king.arthur@camelot.bt",
-    }
-    oauth_account2 = {
-        "oauth_name": "service2",
-        "access_token": "TOKEN",
-        "expires_at": 1579000751,
-        "account_id": "user_oauth2",
-        "account_email": "king.arthur@camelot.bt",
-    }
-
     user_create = {"email": "lancelot@camelot.bt", "hashed_password": "guinevere"}
 
     # Create user

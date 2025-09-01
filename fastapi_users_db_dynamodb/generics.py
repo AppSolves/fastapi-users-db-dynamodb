@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from pydantic import UUID4
 
 
-class GUID:
+class GUID(UUID4):
     """
     Platform-independent GUID type.
 
@@ -49,7 +49,7 @@ def now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
 
-class TIMESTAMPAware:
+class TIMESTAMPAware(datetime):
     """
     Kept for API compatibility.
 

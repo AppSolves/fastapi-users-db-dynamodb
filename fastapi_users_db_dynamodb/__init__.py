@@ -25,6 +25,7 @@ import aioboto3
 from boto3.dynamodb.conditions import Attr
 from fastapi_users.db.base import BaseUserDatabase
 from fastapi_users.models import ID, OAP, UP
+from pydantic import BaseModel, ConfigDict, Field
 
 from fastapi_users_db_dynamodb._aioboto3_patch import *  # noqa: F403
 from fastapi_users_db_dynamodb.generics import GUID
@@ -34,22 +35,30 @@ __version__ = "1.0.0"
 UUID_ID = uuid.UUID
 
 
-class DynamoDBBaseUserTable(Generic[ID]):
+class DynamoDBBaseUserTable(BaseModel, Generic[ID]):
     """Base user table schema for DynamoDB."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     __tablename__ = "user"
 
     if TYPE_CHECKING:
         id: ID
-    email: str
-    hashed_password: str
-    is_active: bool
-    is_superuser: bool
-    is_verified: bool
+    email: str = Field(..., description="The email of the user")
+    hashed_password: str = Field(..., description="The hashed password of the user")
+    is_active: bool = Field(
+        default=True, description="Whether the user is marked as active in the database"
+    )
+    is_superuser: bool = Field(
+        default=False, description="Whether the user has admin rights"
+    )
+    is_verified: bool = Field(
+        default=False, description="Whether the user has verified their email"
+    )
 
 
 class DynamoDBBaseUserTableUUID(DynamoDBBaseUserTable[UUID_ID]):
-    id: UUID_ID
+    id: UUID_ID = Field(default_factory=uuid.uuid4, description="The ID for the user")
 
 
 class DynamoDBBaseOAuthAccountTable(Generic[ID]):
@@ -59,18 +68,27 @@ class DynamoDBBaseOAuthAccountTable(Generic[ID]):
 
     if TYPE_CHECKING:
         id: ID
-    oauth_name: str
-    access_token: str
-    expires_at: int | None
-    refresh_token: str | None
-    account_id: str
-    account_email: str
-    user_id: ID
+    oauth_name: str = Field(..., description="The name of the OAuth social provider")
+    access_token: str = Field(
+        ..., description="The access token linked with the OAuth account"
+    )
+    expires_at: int | None = Field(
+        default=None, description="The timestamp at which this account expires"
+    )
+    refresh_token: str | None = Field(
+        default=None, description="The refresh token associated with this OAuth account"
+    )
+    account_id: str = Field(..., description="The ID of this OAuth account")
+    account_email: str = Field(
+        ..., description="The email associated with this OAuth account"
+    )
 
 
 class DynamoDBBaseOAuthAccountTableUUID(DynamoDBBaseUserTable[UUID_ID]):
-    id: UUID_ID
-    user_id: GUID
+    id: UUID_ID = Field(
+        default_factory=uuid.uuid4, description="The ID for the OAuth account"
+    )
+    user_id: GUID = Field(..., description="The user ID this OAuth account belongs to")
 
 
 class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):

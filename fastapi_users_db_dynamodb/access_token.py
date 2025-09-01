@@ -14,23 +14,30 @@ from typing import TYPE_CHECKING, Any, Generic, get_type_hints
 import aioboto3
 from fastapi_users.authentication.strategy.db import AP, AccessTokenDatabase
 from fastapi_users.models import ID
+from pydantic import BaseModel, ConfigDict, Field
 
 from fastapi_users_db_dynamodb._aioboto3_patch import *  # noqa: F403
+from fastapi_users_db_dynamodb.generics import GUID
 
 
-class DynamoDBBaseAccessTokenTable(Generic[ID]):
+class DynamoDBBaseAccessTokenTable(BaseModel, Generic[ID]):
     """Base access token table schema for DynamoDB."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     __tablename__ = "accesstoken"
 
-    token: str
-    created_at: datetime
+    token: str = Field(..., description="The token value of the AccessToken object")
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        description="The date of creation of the AccessToken object",
+    )
     if TYPE_CHECKING:
         user_id: ID
 
 
 class DynamoDBBaseAccessTokenTableUUID(DynamoDBBaseAccessTokenTable[uuid.UUID]):
-    user_id: uuid.UUID
+    user_id: GUID = Field(..., description="The user ID this token belongs to")
 
 
 class DynamoDBAccessTokenDatabase(Generic[AP], AccessTokenDatabase[AP]):
