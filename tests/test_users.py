@@ -1,4 +1,5 @@
 from collections.abc import AsyncGenerator
+from typing import Any
 
 import aioboto3
 import pytest
@@ -51,7 +52,7 @@ async def dynamodb_user_db() -> AsyncGenerator[DynamoDBUserDatabase, None]:
 
         db = DynamoDBUserDatabase(
             session,
-            DynamoDBBaseUserTableUUID,
+            User,
             table_name,
             DATABASE_USERTABLE_PRIMARY_KEY,
             dynamodb_resource_region=DATABASE_REGION,
@@ -172,8 +173,8 @@ async def test_queries_custom_fields(
 @pytest.mark.asyncio
 async def test_queries_oauth(
     dynamodb_user_db_oauth: DynamoDBUserDatabase[UserOAuth, UUID_ID],
-    oauth_account1,
-    oauth_account2,
+    oauth_account1: dict[str, Any],
+    oauth_account2: dict[str, Any],
 ):
     # Test OAuth accounts
     user_create = {"email": "lancelot@camelot.bt", "hashed_password": "guinevere"}
