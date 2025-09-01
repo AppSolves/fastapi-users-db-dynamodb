@@ -119,12 +119,16 @@ class DynamoDBAccessTokenDatabase(Generic[AP], AccessTokenDatabase[AP]):
         return str(token)
 
     async def get_by_token(
-        self, token: str, max_age: datetime | None = None
+        self,
+        token: str,
+        max_age: datetime | None = None,
+        instant_update: bool = False,
     ) -> AP | None:
         """Retrieve an access token by token string."""
         async with self._table(self.table_name, self._resource_region) as table:
             resp = await table.get_item(
-                Key={self.primary_key: self._ensure_token(token)}
+                Key={self.primary_key: self._ensure_token(token)},
+                ConsistentRead=instant_update,
             )
             item = resp.get("Item")
 

@@ -225,12 +225,19 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
         if "email" in data and isinstance(data["email"], str):
             data["email"] = data["email"].lower()
 
-    async def get(self, id: ID | str) -> UP | None:
+    async def get(
+        self,
+        id: ID | str,
+        instant_update: bool = False,
+    ) -> UP | None:
         """Get a user by id and hydrate oauth_accounts if available."""
         id_str = self._ensure_id_str(id)
 
         async with self._table(self.user_table_name, self._resource_region) as table:
-            resp = await table.get_item(Key={self.primary_key: id_str})
+            resp = await table.get_item(
+                Key={self.primary_key: id_str},
+                ConsistentRead=instant_update,
+            )
             item = resp.get("Item")
             user = self._item_to_user(item)
 
@@ -335,11 +342,19 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
             raise ValueError("Could not cast DB item to User model")
         return refreshed_user
 
-    async def update(self, user: UP, update_dict: dict[str, Any]) -> UP:
+    async def update(
+        self,
+        user: UP,
+        update_dict: dict[str, Any],
+        instant_update: bool = False,
+    ) -> UP:
         """Update a user with update_dict and return the updated UP instance."""
         user_id = self._extract_id_from_user(user)
         async with self._table(self.user_table_name, self._resource_region) as table:
-            resp = await table.get_item(Key={self.primary_key: user_id})
+            resp = await table.get_item(
+                Key={self.primary_key: user_id},
+                ConsistentRead=instant_update,
+            )
             current = resp.get("Item", None)
 
             if not current:
@@ -414,7 +429,7 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
         user: UP,
         oauth_account: OAP,  # type: ignore
         update_dict: dict[str, Any],
-    ) -> UP | None:
+    ) -> UP:
         """Update an OAuth account and return the refreshed user (UP)."""
         if self.oauth_account_table is None or self.oauth_account_table_name is None:
             raise NotImplementedError()
