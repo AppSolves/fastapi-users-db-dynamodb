@@ -249,7 +249,8 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
                 self.oauth_account_table_name, self._resource_region
             ) as oauth_table:
                 resp = await oauth_table.scan(
-                    FilterExpression=Attr("user_id").eq(id_str)
+                    FilterExpression=Attr("user_id").eq(id_str),
+                    ConsistentRead=instant_update,
                 )
                 accounts = resp.get("Items", [])
                 user.oauth_accounts = [  # type: ignore
@@ -258,13 +259,18 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
 
         return user
 
-    async def get_by_email(self, email: str) -> UP | None:
+    async def get_by_email(
+        self,
+        email: str,
+        instant_update: bool = False,
+    ) -> UP | None:
         """Get a user by email (case-insensitive: emails are stored lowercased)."""
         email_norm = email.lower()
         async with self._table(self.user_table_name, self._resource_region) as table:
             resp = await table.scan(
                 FilterExpression=Attr("email").eq(email_norm),
                 Limit=1,
+                ConsistentRead=instant_update,
             )
             items = resp.get("Items", [])
             if not items:
@@ -280,7 +286,8 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
                 self.oauth_account_table_name, self._resource_region
             ) as oauth_table:
                 resp = await oauth_table.scan(
-                    FilterExpression=Attr("user_id").eq(user_id)
+                    FilterExpression=Attr("user_id").eq(user_id),
+                    ConsistentRead=instant_update,
                 )
                 accounts = resp.get("Items", [])
                 user.oauth_accounts = [  # type: ignore
@@ -289,7 +296,12 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
 
         return user
 
-    async def get_by_oauth_account(self, oauth: str, account_id: str) -> UP | None:
+    async def get_by_oauth_account(
+        self,
+        oauth: str,
+        account_id: str,
+        instant_update: bool = False,
+    ) -> UP | None:
         """Find a user by oauth provider and provider account id."""
         if self.oauth_account_table is None or self.oauth_account_table_name is None:
             raise NotImplementedError()
@@ -301,6 +313,7 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
                 FilterExpression=Attr("oauth_name").eq(oauth)
                 & Attr("account_id").eq(account_id),
                 Limit=1,
+                ConsistentRead=instant_update,
             )
             items = resp.get("Items", [])
             if not items:
