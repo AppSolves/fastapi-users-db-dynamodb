@@ -11,6 +11,8 @@ from datetime import datetime, timezone
 
 from pydantic import UUID4
 
+UUID_ID = uuid.UUID
+
 
 class GUID(UUID4):
     """
@@ -27,18 +29,28 @@ class GUID(UUID4):
         pass
 
     @staticmethod
-    def to_storage(value: uuid.UUID | str | None) -> str | None:
+    def to_storage(value: UUID_ID | str | None) -> str | None:
         """Convert UUID or string to a DynamoDB-storable string."""
         if value is None:
             return None
-        return str(value) if isinstance(value, uuid.UUID) else str(uuid.UUID(value))
+        return str(value) if isinstance(value, UUID_ID) else str(UUID_ID(value))
 
     @staticmethod
-    def from_storage(value: str | uuid.UUID | None) -> uuid.UUID | None:
+    def from_storage(value: str | UUID_ID | None) -> UUID_ID | None:
         """Convert a stored string back into a UUID object."""
         if value is None:
             return None
-        return value if isinstance(value, uuid.UUID) else uuid.UUID(value)
+        return value if isinstance(value, UUID_ID) else UUID_ID(value)
+
+    def __eq__(self, other):
+        """Override equality to ensure correct comparison with UUID_ID."""
+        if isinstance(other, UUID_ID):
+            return self.int == other.int  # Direct comparison of UUIDs as integers
+        return False  # Handle comparison with non-UUID types
+
+    def __repr__(self):
+        """Override the string representation for better debugging."""
+        return f"<GUID({str(self)})>"
 
 
 def now_utc() -> datetime:

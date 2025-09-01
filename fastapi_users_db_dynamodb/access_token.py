@@ -12,12 +12,15 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Generic, get_type_hints
 
 import aioboto3
+from botocore.exceptions import ClientError
 from fastapi_users.authentication.strategy.db import AP, AccessTokenDatabase
 from fastapi_users.models import ID
 from pydantic import BaseModel, ConfigDict, Field
 
 from fastapi_users_db_dynamodb._aioboto3_patch import *  # noqa: F403
-from fastapi_users_db_dynamodb.generics import GUID
+from fastapi_users_db_dynamodb.generics import UUID_ID
+
+DATABASE_TOKENTABLE_PRIMARY_KEY: str = "token"
 
 
 class DynamoDBBaseAccessTokenTable(BaseModel, Generic[ID]):
@@ -36,8 +39,8 @@ class DynamoDBBaseAccessTokenTable(BaseModel, Generic[ID]):
         user_id: ID
 
 
-class DynamoDBBaseAccessTokenTableUUID(DynamoDBBaseAccessTokenTable[uuid.UUID]):
-    user_id: GUID = Field(..., description="The user ID this token belongs to")
+class DynamoDBBaseAccessTokenTableUUID(DynamoDBBaseAccessTokenTable[UUID_ID]):
+    user_id: UUID_ID = Field(..., description="The user ID this token belongs to")
 
 
 class DynamoDBAccessTokenDatabase(Generic[AP], AccessTokenDatabase[AP]):
@@ -53,6 +56,7 @@ class DynamoDBAccessTokenDatabase(Generic[AP], AccessTokenDatabase[AP]):
     session: aioboto3.Session
     access_token_table: type[AP]
     table_name: str
+    primary_key: str = DATABASE_TOKENTABLE_PRIMARY_KEY
     _resource: Any | None
     _resource_region: str | None
 
@@ -61,12 +65,14 @@ class DynamoDBAccessTokenDatabase(Generic[AP], AccessTokenDatabase[AP]):
         session: aioboto3.Session,
         access_token_table: type[AP],
         table_name: str,
+        primary_key: str = DATABASE_TOKENTABLE_PRIMARY_KEY,
         dynamodb_resource: Any | None = None,
         dynamodb_resource_region: Any | None = None,
     ):
         self.session = session
         self.access_token_table = access_token_table
         self.table_name = table_name
+        self.primary_key = primary_key
         self._resource = dynamodb_resource
         self._resource_region = dynamodb_resource_region
 
@@ -96,10 +102,10 @@ class DynamoDBAccessTokenDatabase(Generic[AP], AccessTokenDatabase[AP]):
             hints = get_type_hints(self.access_token_table)
             if (
                 "user_id" in hints
-                and hints["user_id"] is uuid.UUID
+                and hints["user_id"] is UUID_ID
                 and isinstance(item.get("user_id"), str)
             ):
-                item = {**item, "user_id": uuid.UUID(item["user_id"])}
+                item = {**item, "user_id": UUID_ID(item["user_id"])}
 
             if "created_at" in item and isinstance(item["created_at"], str):
                 item["created_at"] = datetime.fromisoformat(item["created_at"])
@@ -117,7 +123,9 @@ class DynamoDBAccessTokenDatabase(Generic[AP], AccessTokenDatabase[AP]):
     ) -> AP | None:
         """Retrieve an access token by token string."""
         async with self._table(self.table_name, self._resource_region) as table:
-            resp = await table.get_item(Key={"token": self._ensure_token(token)})
+            resp = await table.get_item(
+                Key={self.primary_key: self._ensure_token(token)}
+            )
             item = resp.get("Item")
 
             if item is None:
@@ -142,27 +150,40 @@ class DynamoDBAccessTokenDatabase(Generic[AP], AccessTokenDatabase[AP]):
             item["user_id"] = str(item["user_id"])
 
         async with self._table(self.table_name, self._resource_region) as table:
-            await table.put_item(Item=item)
+            try:
+                await table.put_item(
+                    Item=item,
+                    ConditionExpression="attribute_not_exists(#token)",
+                    ExpressionAttributeNames={"#token": self.primary_key},
+                )
+            except ClientError as e:
+                if (
+                    e.response.get("Error", {}).get("Code")
+                    == "ConditionalCheckFailedException"
+                ):
+                    raise ValueError(f"Token {item['token']} already exists.")
+                raise
 
-            resp = await table.get_item(Key={"token": item["token"]})
-            stored = resp.get("Item", item)
+            access_token = self._item_to_access_token(item)
+            if access_token is None:
+                raise ValueError("Could not cast DB item to AccessToken model")
 
-        access_token = self._item_to_access_token(stored)
-        if access_token is None:
-            raise ValueError("Could not cast DB item to AccessToken model")
         return access_token
 
     async def update(self, access_token: AP, update_dict: dict[str, Any]) -> AP:
         """Update an existing access token."""
 
-        token_dict = (
-            access_token.dict()  # type: ignore
-            if hasattr(access_token, "dict") and callable(access_token.dict)  # type: ignore
+        token_dict: dict = (
+            access_token.model_dump()  # type: ignore
+            if hasattr(access_token, "model_dump") and callable(access_token.model_dump)  # type: ignore
+            else vars(access_token)
+            if hasattr(access_token, "__dict__")
             else dict(access_token)
             if isinstance(access_token, dict)
             else vars(access_token)
         )
-        token_dict = {**token_dict, **update_dict}  # type: ignore
+
+        token_dict.update(update_dict)
 
         if isinstance(token_dict.get("user_id"), uuid.UUID):
             token_dict["user_id"] = str(token_dict["user_id"])
@@ -170,12 +191,21 @@ class DynamoDBAccessTokenDatabase(Generic[AP], AccessTokenDatabase[AP]):
             token_dict["created_at"] = token_dict["created_at"].isoformat()
 
         async with self._table(self.table_name, self._resource_region) as table:
-            await table.put_item(Item=token_dict)
+            try:
+                await table.put_item(
+                    Item=token_dict,
+                    ConditionExpression="attribute_exists(#token)",
+                    ExpressionAttributeNames={"#token": self.primary_key},
+                )
+            except ClientError as e:
+                if (
+                    e.response.get("Error", {}).get("Code")
+                    == "ConditionalCheckFailedException"
+                ):
+                    raise ValueError(f"Token {token_dict['token']} does not exist.")
+                raise
 
-            resp = await table.get_item(Key={"token": token_dict["token"]})
-            stored = resp.get("Item", token_dict)
-
-        updated = self._item_to_access_token(stored)
+        updated = self._item_to_access_token(token_dict)
         if updated is None:
             raise ValueError("Could not cast DB item to AccessToken model")
         return updated
@@ -189,4 +219,16 @@ class DynamoDBAccessTokenDatabase(Generic[AP], AccessTokenDatabase[AP]):
             raise ValueError("access_token has no 'token' field")
 
         async with self._table(self.table_name, self._resource_region) as table:
-            await table.delete_item(Key={"token": self._ensure_token(token)})
+            try:
+                await table.delete_item(
+                    Key={self.primary_key: self._ensure_token(token)},
+                    ConditionExpression="attribute_exists(#token)",
+                    ExpressionAttributeNames={"#token": self.primary_key},
+                )
+            except ClientError as e:
+                if (
+                    e.response.get("Error", {}).get("Code")
+                    == "ConditionalCheckFailedException"
+                ):
+                    raise ValueError(f"Token {token} does not exist.")
+                raise

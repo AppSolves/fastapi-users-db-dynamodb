@@ -23,16 +23,17 @@ from typing import TYPE_CHECKING, Any, Generic, get_type_hints
 
 import aioboto3
 from boto3.dynamodb.conditions import Attr
+from botocore.exceptions import ClientError
 from fastapi_users.db.base import BaseUserDatabase
 from fastapi_users.models import ID, OAP, UP
 from pydantic import BaseModel, ConfigDict, Field
 
 from fastapi_users_db_dynamodb._aioboto3_patch import *  # noqa: F403
-from fastapi_users_db_dynamodb.generics import GUID
+from fastapi_users_db_dynamodb.generics import UUID_ID
 
 __version__ = "1.0.0"
 
-UUID_ID = uuid.UUID
+DATABASE_USERTABLE_PRIMARY_KEY: str = "id"
 
 
 class DynamoDBBaseUserTable(BaseModel, Generic[ID]):
@@ -88,7 +89,9 @@ class DynamoDBBaseOAuthAccountTableUUID(DynamoDBBaseUserTable[UUID_ID]):
     id: UUID_ID = Field(
         default_factory=uuid.uuid4, description="The ID for the OAuth account"
     )
-    user_id: GUID = Field(..., description="The user ID this OAuth account belongs to")
+    user_id: UUID_ID = Field(
+        ..., description="The user ID this OAuth account belongs to"
+    )
 
 
 class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
@@ -109,6 +112,7 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
     user_table: type[UP]
     oauth_account_table: type[DynamoDBBaseOAuthAccountTable] | None
     user_table_name: str
+    primary_key: str = DATABASE_USERTABLE_PRIMARY_KEY
     oauth_account_table_name: str | None
     _resource: Any | None
     _resource_region: str | None
@@ -118,6 +122,7 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
         session: aioboto3.Session,
         user_table: type[UP],
         user_table_name: str,
+        primary_key: str = DATABASE_USERTABLE_PRIMARY_KEY,
         oauth_account_table: type[DynamoDBBaseOAuthAccountTable] | None = None,
         oauth_account_table_name: str | None = None,
         dynamodb_resource: Any | None = None,
@@ -127,6 +132,7 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
         self.user_table = user_table
         self.oauth_account_table = oauth_account_table
         self.user_table_name = user_table_name
+        self.primary_key = primary_key
         self.oauth_account_table_name = oauth_account_table_name
 
         self._resource = dynamodb_resource
@@ -163,9 +169,11 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
         if isinstance(user_obj, dict):
             idv = user_obj.get("id")
 
-        elif hasattr(user_obj, "dict") and callable(getattr(user_obj, "dict")):
+        elif hasattr(user_obj, "model_dump") and callable(
+            getattr(user_obj, "model_dump")
+        ):
             try:
-                idv = user_obj.dict().get("id")
+                idv = user_obj.model_dump().get("id")
             except Exception:
                 idv = getattr(user_obj, "id", None)
 
@@ -207,7 +215,7 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
         """Get a user by id."""
         id_str = self._ensure_id_str(id)
         async with self._table(self.user_table_name, self._resource_region) as table:
-            resp = await table.get_item(Key={"id": id_str})
+            resp = await table.get_item(Key={self.primary_key: id_str})
             item = resp.get("Item")
             return self._item_to_user(item)
 
@@ -258,12 +266,21 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
         self._ensure_email_lower(item)
 
         async with self._table(self.user_table_name, self._resource_region) as table:
-            await table.put_item(Item=item)
+            try:
+                await table.put_item(
+                    Item=item,
+                    ConditionExpression="attribute_not_exists(#id)",
+                    ExpressionAttributeNames={"#id": self.primary_key},
+                )
+            except ClientError as e:
+                if (
+                    e.response.get("Error", {}).get("Code")
+                    == "ConditionalCheckFailedException"
+                ):
+                    raise ValueError(f"User {item['id']} already exists.")
+                raise
 
-            resp = await table.get_item(Key={"id": item["id"]})
-            stored = resp.get("Item", item)
-
-        refreshed_user = self._item_to_user(stored)
+        refreshed_user = self._item_to_user(item)
         if refreshed_user is None:
             raise ValueError("Could not cast DB item to User model")
         return refreshed_user
@@ -272,8 +289,9 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
         """Update a user with update_dict and return the updated UP instance."""
         user_id = self._extract_id_from_user(user)
         async with self._table(self.user_table_name, self._resource_region) as table:
-            resp = await table.get_item(Key={"id": user_id})
-            current = resp.get("Item", {})
+            resp = await table.get_item(Key={self.primary_key: user_id})
+            current = resp.get("Item", None)
+
             if not current:
                 raise ValueError("User not found")
 
@@ -281,11 +299,21 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
 
             self._ensure_email_lower(merged)
 
-            await table.put_item(Item=merged)
+            try:
+                await table.put_item(
+                    Item=merged,
+                    ConditionExpression="attribute_exists(#id)",
+                    ExpressionAttributeNames={"#id": self.primary_key},
+                )
+            except ClientError as e:
+                if (
+                    e.response.get("Error", {}).get("Code")
+                    == "ConditionalCheckFailedException"
+                ):
+                    raise ValueError(f"User {user_id} does not exist.")
+                raise
 
-            refreshed = (await table.get_item(Key={"id": user_id})).get("Item", merged)
-
-        refreshed_user = self._item_to_user(refreshed)
+        refreshed_user = self._item_to_user(merged)
         if refreshed_user is None:
             raise ValueError("Could not cast DB item to User model")
         return refreshed_user
@@ -294,7 +322,19 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
         """Delete a user."""
         user_id = self._extract_id_from_user(user)
         async with self._table(self.user_table_name, self._resource_region) as table:
-            await table.delete_item(Key={"id": user_id})
+            try:
+                await table.delete_item(
+                    Key={self.primary_key: user_id},
+                    ConditionExpression="attribute_exists(#id)",
+                    ExpressionAttributeNames={"#id": self.primary_key},
+                )
+            except ClientError as e:
+                if (
+                    e.response.get("Error", {}).get("Code")
+                    == "ConditionalCheckFailedException"
+                ):
+                    raise ValueError(f"User {user_id} does not exist.")
+                raise
 
     async def add_oauth_account(self, user: UP, create_dict: dict[str, Any]) -> UP:
         """Add an OAuth account for `user`. Returns the refreshed user (UP)."""
@@ -313,22 +353,15 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
         ) as oauth_table:
             await oauth_table.put_item(Item=oauth_item)
 
-        refreshed_user = await self.get(user_id)
-        if refreshed_user is None:
-            raise ValueError("Refreshed user is None")
-
-        try:
+        if hasattr(user, "oauth_accounts"):
             oauth_obj = (
                 self.oauth_account_table(**oauth_item)
                 if self.oauth_account_table is not None
                 else oauth_item
             )
-            if hasattr(refreshed_user, "oauth_accounts"):
-                getattr(refreshed_user, "oauth_accounts").append(oauth_obj)
-        except Exception:
-            pass
+            user.oauth_accounts.append(oauth_obj)  # type: ignore
 
-        return refreshed_user
+        return user
 
     async def update_oauth_account(
         self,
@@ -343,11 +376,11 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
         oauth_id = None
         if isinstance(oauth_account, dict):
             oauth_id = oauth_account.get("id")
-        elif hasattr(oauth_account, "dict") and callable(
-            getattr(oauth_account, "dict")
+        elif hasattr(oauth_account, "model_dump") and callable(
+            getattr(oauth_account, "model_dump")
         ):
             try:
-                oauth_id = oauth_account.dict().get("id")  # type: ignore
+                oauth_id = oauth_account.model_dump().get("id")  # type: ignore
             except Exception:
                 oauth_id = getattr(oauth_account, "id", None)
         elif hasattr(oauth_account, "id"):
@@ -363,16 +396,32 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
         async with self._table(
             self.oauth_account_table_name, self._resource_region
         ) as oauth_table:
-            resp = await oauth_table.get_item(Key={"id": oauth_id_str})
-            current = resp.get("Item", {})
-            if not current:
-                raise ValueError("OAuth account not found")
+            merged = {**update_dict}
+            try:
+                await oauth_table.put_item(
+                    Item=merged,
+                    ConditionExpression="attribute_exists(#id)",
+                    ExpressionAttributeNames={"#id": self.primary_key},
+                )
+            except ClientError as e:
+                if (
+                    e.response.get("Error", {}).get("Code")
+                    == "ConditionalCheckFailedException"
+                ):
+                    raise ValueError(f"User {oauth_id_str} already exists.")
+                raise
 
-            merged = {**current, **update_dict}
-            await oauth_table.put_item(Item=merged)
+        if hasattr(user, "oauth_accounts"):
+            existing_oauth = next(
+                (
+                    account
+                    for account in user.oauth_accounts  # type: ignore
+                    if account.id == oauth_id_str
+                ),
+                None,
+            )
+            if existing_oauth:
+                index = user.oauth_accounts.index(existing_oauth)  # type: ignore
+                user.oauth_accounts[index] = merged  # type: ignore
 
-        user_id = self._extract_id_from_user(user)
-        refreshed_user = await self.get(user_id)
-        if refreshed_user is None:
-            raise ValueError("Could not cast DB item to User model")
-        return refreshed_user
+        return user

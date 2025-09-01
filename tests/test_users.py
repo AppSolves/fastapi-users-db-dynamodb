@@ -13,7 +13,7 @@ from fastapi_users_db_dynamodb import (
     DynamoDBUserDatabase,
 )
 from fastapi_users_db_dynamodb._aioboto3_patch import *  # noqa: F403
-from tests.conftest import DATABASE_REGION
+from tests.conftest import DATABASE_REGION, DATABASE_USERTABLE_PRIMARY_KEY
 from tests.tables import ensure_table_exists
 
 
@@ -45,12 +45,15 @@ async def dynamodb_user_db() -> AsyncGenerator[DynamoDBUserDatabase, None]:
     with mock_aws():
         session = aioboto3.Session()
         table_name = "users_test"
-        await ensure_table_exists(session, table_name, DATABASE_REGION)
+        await ensure_table_exists(
+            session, table_name, DATABASE_USERTABLE_PRIMARY_KEY, DATABASE_REGION
+        )
 
         db = DynamoDBUserDatabase(
             session,
             DynamoDBBaseUserTableUUID,
             table_name,
+            DATABASE_USERTABLE_PRIMARY_KEY,
             dynamodb_resource_region=DATABASE_REGION,
         )
         yield db
@@ -62,14 +65,19 @@ async def dynamodb_user_db_oauth() -> AsyncGenerator[DynamoDBUserDatabase, None]
         session = aioboto3.Session()
         user_table_name = "users_test_oauth"
         oauth_table_name = "oauth_accounts_test"
-        await ensure_table_exists(session, user_table_name, DATABASE_REGION)
-        await ensure_table_exists(session, oauth_table_name, DATABASE_REGION)
+        await ensure_table_exists(
+            session, user_table_name, DATABASE_USERTABLE_PRIMARY_KEY, DATABASE_REGION
+        )
+        await ensure_table_exists(
+            session, oauth_table_name, DATABASE_USERTABLE_PRIMARY_KEY, DATABASE_REGION
+        )
 
         db = DynamoDBUserDatabase(
             session,
             UserOAuth,
             user_table_name,
-            OAuthAccount,
+            DATABASE_USERTABLE_PRIMARY_KEY,
+            OAuthAccount,  # type: ignore
             oauth_table_name,
             dynamodb_resource_region=DATABASE_REGION,
         )
@@ -122,8 +130,8 @@ async def test_queries(dynamodb_user_db: DynamoDBUserDatabase[User, UUID_ID]):
     with pytest.raises(NotImplementedError):
         await dynamodb_user_db.add_oauth_account(user, {})
     with pytest.raises(ValueError):
-        oauth_account = OAuthAccount()
-        await dynamodb_user_db.update_oauth_account(user, oauth_account, {})
+        oauth_account = OAuthAccount()  # type: ignore
+        await dynamodb_user_db.update_oauth_account(user, oauth_account, {})  # type: ignore
 
 
 @pytest.mark.asyncio
@@ -179,20 +187,22 @@ async def test_queries_oauth(
     user = await dynamodb_user_db_oauth.add_oauth_account(user, oauth_account2)
 
     assert len(user.oauth_accounts) == 2
-    assert user.oauth_accounts[0].account_id == oauth_account1["account_id"]
-    assert user.oauth_accounts[1].account_id == oauth_account2["account_id"]
+    assert user.oauth_accounts[0].account_id == oauth_account1["account_id"]  # type: ignore
+    assert user.oauth_accounts[1].account_id == oauth_account2["account_id"]  # type: ignore
 
     # Update OAuth account
     user = await dynamodb_user_db_oauth.update_oauth_account(
-        user, user.oauth_accounts[0], {"access_token": "NEW_TOKEN"}
+        user,
+        user.oauth_accounts[0],  # type: ignore
+        {"access_token": "NEW_TOKEN"},
     )
-    assert user.oauth_accounts[0].access_token == "NEW_TOKEN"
+    assert user.oauth_accounts[0].access_token == "NEW_TOKEN"  # type: ignore
 
     # Get by id
     id_user = await dynamodb_user_db_oauth.get(user.id)
     assert id_user is not None
     assert id_user.id == user.id
-    assert id_user.oauth_accounts[0].access_token == "NEW_TOKEN"
+    assert id_user.oauth_accounts[0].access_token == "NEW_TOKEN"  # type: ignore
 
     # Get by email
     email_user = await dynamodb_user_db_oauth.get_by_email(user_create["email"])

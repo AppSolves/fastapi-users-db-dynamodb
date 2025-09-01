@@ -13,7 +13,11 @@ from fastapi_users_db_dynamodb.access_token import (
     DynamoDBAccessTokenDatabase,
     DynamoDBBaseAccessTokenTableUUID,
 )
-from tests.conftest import DATABASE_REGION
+from tests.conftest import (
+    DATABASE_REGION,
+    DATABASE_TOKENTABLE_PRIMARY_KEY,
+    DATABASE_USERTABLE_PRIMARY_KEY,
+)
 from tests.tables import ensure_table_exists
 
 
@@ -37,40 +41,37 @@ async def dynamodb_access_token_db(
         session = aioboto3.Session()
         user_table_name = "users_test"
         token_table_name = "access_tokens_test"
-        await ensure_table_exists(session, user_table_name, DATABASE_REGION)
-        await ensure_table_exists(session, token_table_name, DATABASE_REGION)
+        await ensure_table_exists(
+            session, user_table_name, DATABASE_USERTABLE_PRIMARY_KEY, DATABASE_REGION
+        )
+        await ensure_table_exists(
+            session, token_table_name, DATABASE_TOKENTABLE_PRIMARY_KEY, DATABASE_REGION
+        )
 
         user_db = DynamoDBUserDatabase(
             session,
             DynamoDBBaseUserTableUUID,
             user_table_name,
+            DATABASE_USERTABLE_PRIMARY_KEY,
             dynamodb_resource_region=DATABASE_REGION,
         )
         user = await user_db.create(
-            {
-                "id": user_id,
-                "email": "lancelot@camelot.bt",
-                "hashed_password": "guinevere",
-            }
+            User(
+                id=user_id,
+                email="lancelot@camelot.bt",
+                hashed_password="guinevere",
+            )  # type: ignore
         )
 
         token_db = DynamoDBAccessTokenDatabase(
             session,
             AccessToken,
             token_table_name,
+            DATABASE_TOKENTABLE_PRIMARY_KEY,
             dynamodb_resource_region=DATABASE_REGION,
         )
 
-        # Vorherigen Token löschen, falls er existiert
-        token_obj = await token_db.get_by_token("TOKEN")
-        if token_obj:
-            await token_db.delete(token_obj)
-
         yield token_db
-
-        token_obj = await token_db.get_by_token("TOKEN")
-        if token_obj:
-            await token_db.delete(token_obj)
 
         await user_db.delete(user)
 
@@ -82,10 +83,12 @@ async def test_queries(
 ):
     access_token_create = {"token": "TOKEN", "user_id": user_id}
 
+    # Create
     access_token = await dynamodb_access_token_db.create(access_token_create)
     assert access_token.token == "TOKEN"
     assert access_token.user_id == user_id
 
+    # Update
     new_time = datetime.now(timezone.utc)
     updated_access_token = await dynamodb_access_token_db.update(
         access_token, {"created_at": new_time}
@@ -94,6 +97,7 @@ async def test_queries(
         microsecond=0
     )
 
+    # Get
     token_obj = await dynamodb_access_token_db.get_by_token(access_token.token)
     assert token_obj is not None
 
@@ -110,6 +114,7 @@ async def test_queries(
     token_obj = await dynamodb_access_token_db.get_by_token("NOT_EXISTING_TOKEN")
     assert token_obj is None
 
+    # Delete
     await dynamodb_access_token_db.delete(access_token)
     deleted_token = await dynamodb_access_token_db.get_by_token(access_token.token)
     assert deleted_token is None
