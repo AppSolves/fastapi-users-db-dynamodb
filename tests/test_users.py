@@ -11,6 +11,7 @@ from fastapi_users_db_dynamodb import (
     DynamoDBBaseUserTableUUID,
     DynamoDBUserDatabase,
 )
+from tests.conftest import DATABASE_REGION
 
 
 class Base:
@@ -40,7 +41,12 @@ async def dynamodb_user_db() -> AsyncGenerator[DynamoDBUserDatabase, None]:
         session = aioboto3.Session()
         table_name = "users_test"
 
-        db = DynamoDBUserDatabase(session, DynamoDBBaseUserTableUUID, table_name)
+        db = DynamoDBUserDatabase(
+            session,
+            DynamoDBBaseUserTableUUID,
+            table_name,
+            dynamodb_resource_region=DATABASE_REGION,
+        )
         yield db
 
 
@@ -57,6 +63,7 @@ async def dynamodb_user_db_oauth() -> AsyncGenerator[DynamoDBUserDatabase, None]
             user_table_name,
             OAuthAccount,
             oauth_table_name,
+            dynamodb_resource_region=DATABASE_REGION,
         )
         yield db
 

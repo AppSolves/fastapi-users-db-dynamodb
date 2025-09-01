@@ -90,8 +90,9 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
     user_table: type[UP]
     oauth_account_table: type[DynamoDBBaseOAuthAccountTable] | None
     user_table_name: str
-    oauth_table_name: str | None
+    oauth_account_table_name: str | None
     _resource: Any | None
+    _resource_region: str | None
 
     def __init__(
         self,
@@ -99,19 +100,21 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
         user_table: type[UP],
         user_table_name: str,
         oauth_account_table: type[DynamoDBBaseOAuthAccountTable] | None = None,
-        oauth_table_name: str | None = None,
+        oauth_account_table_name: str | None = None,
         dynamodb_resource: Any | None = None,
+        dynamodb_resource_region: str | None = None,
     ):
         self.session = session
         self.user_table = user_table
         self.oauth_account_table = oauth_account_table
         self.user_table_name = user_table_name
-        self.oauth_table_name = oauth_table_name
+        self.oauth_account_table_name = oauth_account_table_name
 
         self._resource = dynamodb_resource
+        self._resource_region = dynamodb_resource_region
 
     @asynccontextmanager
-    async def _table(self, table_name: str):
+    async def _table(self, table_name: str, region: str | None = None):
         """Async context manager that yields a Table object.
 
         If a long-lived resource was provided at init, it's reused (no enter/exit).
@@ -121,7 +124,13 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
             table = await self._resource.Table(table_name)
             yield table
         else:
-            async with self.session.resource("dynamodb") as dynamodb:
+            if region is None:
+                raise ValueError(
+                    "Parameter `region` must be specified when `dynamodb_resource` is omitted"
+                )
+            async with self.session.resource(
+                "dynamodb", region_name=region
+            ) as dynamodb:
                 table = await dynamodb.Table(table_name)
                 yield table
 
@@ -178,7 +187,7 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
     async def get(self, id: ID | str) -> UP | None:
         """Get a user by id."""
         id_str = self._ensure_id_str(id)
-        async with self._table(self.user_table_name) as table:
+        async with self._table(self.user_table_name, self._resource_region) as table:
             resp = await table.get_item(Key={"id": id_str})
             item = resp.get("Item")
             return self._item_to_user(item)
@@ -186,7 +195,7 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
     async def get_by_email(self, email: str) -> UP | None:
         """Get a user by email (case-insensitive: emails are stored lowercased)."""
         email_norm = email.lower()
-        async with self._table(self.user_table_name) as table:
+        async with self._table(self.user_table_name, self._resource_region) as table:
             resp = await table.scan(
                 FilterExpression=Attr("email").eq(email_norm),
                 Limit=1,
@@ -198,10 +207,12 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
 
     async def get_by_oauth_account(self, oauth: str, account_id: str) -> UP | None:
         """Find a user by oauth provider and provider account id."""
-        if self.oauth_account_table is None or self.oauth_table_name is None:
+        if self.oauth_account_table is None or self.oauth_account_table_name is None:
             raise NotImplementedError()
 
-        async with self._table(self.oauth_table_name) as oauth_table:
+        async with self._table(
+            self.oauth_account_table_name, self._resource_region
+        ) as oauth_table:
             resp = await oauth_table.scan(
                 FilterExpression=Attr("oauth_name").eq(oauth)
                 & Attr("account_id").eq(account_id),
@@ -227,7 +238,7 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
 
         self._ensure_email_lower(item)
 
-        async with self._table(self.user_table_name) as table:
+        async with self._table(self.user_table_name, self._resource_region) as table:
             await table.put_item(Item=item)
 
             resp = await table.get_item(Key={"id": item["id"]})
@@ -241,7 +252,7 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
     async def update(self, user: UP, update_dict: dict[str, Any]) -> UP:
         """Update a user with update_dict and return the updated UP instance."""
         user_id = self._extract_id_from_user(user)
-        async with self._table(self.user_table_name) as table:
+        async with self._table(self.user_table_name, self._resource_region) as table:
             resp = await table.get_item(Key={"id": user_id})
             current = resp.get("Item", {})
             if not current:
@@ -263,12 +274,12 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
     async def delete(self, user: UP) -> None:
         """Delete a user."""
         user_id = self._extract_id_from_user(user)
-        async with self._table(self.user_table_name) as table:
+        async with self._table(self.user_table_name, self._resource_region) as table:
             await table.delete_item(Key={"id": user_id})
 
     async def add_oauth_account(self, user: UP, create_dict: dict[str, Any]) -> UP:
         """Add an OAuth account for `user`. Returns the refreshed user (UP)."""
-        if self.oauth_account_table is None or self.oauth_table_name is None:
+        if self.oauth_account_table is None or self.oauth_account_table_name is None:
             raise NotImplementedError()
 
         oauth_item = dict(create_dict)
@@ -278,7 +289,9 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
         user_id = self._extract_id_from_user(user)
         oauth_item["user_id"] = user_id
 
-        async with self._table(self.oauth_table_name) as oauth_table:
+        async with self._table(
+            self.oauth_account_table_name, self._resource_region
+        ) as oauth_table:
             await oauth_table.put_item(Item=oauth_item)
 
         refreshed_user = await self.get(user_id)
@@ -305,7 +318,7 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
         update_dict: dict[str, Any],
     ) -> UP:
         """Update an OAuth account and return the refreshed user (UP)."""
-        if self.oauth_account_table is None or self.oauth_table_name is None:
+        if self.oauth_account_table is None or self.oauth_account_table_name is None:
             raise NotImplementedError()
 
         oauth_id = None
@@ -328,7 +341,9 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
 
         oauth_id_str = self._ensure_id_str(oauth_id)
 
-        async with self._table(self.oauth_table_name) as oauth_table:
+        async with self._table(
+            self.oauth_account_table_name, self._resource_region
+        ) as oauth_table:
             resp = await oauth_table.get_item(Key={"id": oauth_id_str})
             current = resp.get("Item", {})
             if not current:

@@ -13,6 +13,7 @@ from fastapi_users_db_dynamodb.access_token import (
     DynamoDBAccessTokenDatabase,
     DynamoDBBaseAccessTokenTableUUID,
 )
+from tests.conftest import DATABASE_REGION
 
 
 class Base:
@@ -42,7 +43,10 @@ async def dynamodb_access_token_db(
         token_table_name = "access_tokens_test"
 
         user_db = DynamoDBUserDatabase(
-            session, DynamoDBBaseUserTableUUID, user_table_name
+            session,
+            DynamoDBBaseUserTableUUID,
+            user_table_name,
+            dynamodb_resource_region=DATABASE_REGION,
         )
         user = await user_db.create(
             {
@@ -52,7 +56,12 @@ async def dynamodb_access_token_db(
             }
         )
 
-        token_db = DynamoDBAccessTokenDatabase(session, AccessToken, token_table_name)
+        token_db = DynamoDBAccessTokenDatabase(
+            session,
+            AccessToken,
+            token_table_name,
+            dynamodb_resource_region=DATABASE_REGION,
+        )
 
         # Vorherigen Token löschen, falls er existiert
         token_obj = await token_db.get_by_token("TOKEN")

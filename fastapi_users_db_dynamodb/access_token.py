@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Generic, get_type_hints
 
 import aioboto3
@@ -45,6 +45,7 @@ class DynamoDBAccessTokenDatabase(Generic[AP], AccessTokenDatabase[AP]):
     access_token_table: type[AP]
     table_name: str
     _resource: Any | None
+    _resource_region: str | None
 
     def __init__(
         self,
@@ -52,20 +53,28 @@ class DynamoDBAccessTokenDatabase(Generic[AP], AccessTokenDatabase[AP]):
         access_token_table: type[AP],
         table_name: str,
         dynamodb_resource: Any | None = None,
+        dynamodb_resource_region: Any | None = None,
     ):
         self.session = session
         self.access_token_table = access_token_table
         self.table_name = table_name
         self._resource = dynamodb_resource
+        self._resource_region = dynamodb_resource_region
 
     @asynccontextmanager
-    async def _table(self, table_name: str):
+    async def _table(self, table_name: str, region: str | None = None):
         """Async context manager that yields a Table object."""
         if self._resource is not None:
             table = await self._resource.Table(table_name)
             yield table
         else:
-            async with self.session.resource("dynamodb") as dynamodb:
+            if region is None:
+                raise ValueError(
+                    "Parameter `region` must be specified when `dynamodb_resource` is omitted"
+                )
+            async with self.session.resource(
+                "dynamodb", region_name=region
+            ) as dynamodb:
                 table = await dynamodb.Table(table_name)
                 yield table
 
@@ -98,7 +107,7 @@ class DynamoDBAccessTokenDatabase(Generic[AP], AccessTokenDatabase[AP]):
         self, token: str, max_age: datetime | None = None
     ) -> AP | None:
         """Retrieve an access token by token string."""
-        async with self._table(self.table_name) as table:
+        async with self._table(self.table_name, self._resource_region) as table:
             resp = await table.get_item(Key={"token": self._ensure_token(token)})
             item = resp.get("Item")
 
@@ -119,11 +128,11 @@ class DynamoDBAccessTokenDatabase(Generic[AP], AccessTokenDatabase[AP]):
         if "token" not in item or item["token"] is None:
             item["token"] = uuid.uuid4().hex[:43]
         if "created_at" not in item or not isinstance(item["created_at"], str):
-            item["created_at"] = datetime.utcnow().isoformat()
+            item["created_at"] = datetime.now(timezone.utc).isoformat()
         if isinstance(item.get("user_id"), uuid.UUID):
             item["user_id"] = str(item["user_id"])
 
-        async with self._table(self.table_name) as table:
+        async with self._table(self.table_name, self._resource_region) as table:
             await table.put_item(Item=item)
 
             resp = await table.get_item(Key={"token": item["token"]})
@@ -151,7 +160,7 @@ class DynamoDBAccessTokenDatabase(Generic[AP], AccessTokenDatabase[AP]):
         if isinstance(token_dict.get("created_at"), datetime):
             token_dict["created_at"] = token_dict["created_at"].isoformat()
 
-        async with self._table(self.table_name) as table:
+        async with self._table(self.table_name, self._resource_region) as table:
             await table.put_item(Item=token_dict)
 
             resp = await table.get_item(Key={"token": token_dict["token"]})
@@ -170,5 +179,5 @@ class DynamoDBAccessTokenDatabase(Generic[AP], AccessTokenDatabase[AP]):
         if token is None:
             raise ValueError("access_token has no 'token' field")
 
-        async with self._table(self.table_name) as table:
+        async with self._table(self.table_name, self._resource_region) as table:
             await table.delete_item(Key={"token": self._ensure_token(token)})

@@ -4,6 +4,8 @@ from typing import Any, Optional
 import pytest
 from fastapi_users import schemas
 
+DATABASE_REGION: str = "eu-central-1"
+
 
 class User(schemas.BaseUser):
     first_name: Optional[str]
