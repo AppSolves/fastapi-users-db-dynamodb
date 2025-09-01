@@ -1,3 +1,4 @@
+import random as rd
 from collections.abc import AsyncGenerator
 from typing import Any
 
@@ -192,12 +193,17 @@ async def test_queries_oauth(
     assert user.oauth_accounts[1].account_id == oauth_account2["account_id"]  # type: ignore
 
     # Update OAuth account
+    random_account_id = rd.choice(user.oauth_accounts).id
+
+    def _get_account(_user: UserOAuth):
+        return next(acc for acc in _user.oauth_accounts if acc.id == random_account_id)
+
     user = await dynamodb_user_db_oauth.update_oauth_account(
         user,
-        user.oauth_accounts[0],  # type: ignore
+        _get_account(user),
         {"access_token": "NEW_TOKEN"},
     )
-    assert user.oauth_accounts[0].access_token == "NEW_TOKEN"  # type: ignore
+    assert _get_account(user).access_token == "NEW_TOKEN"  # type: ignore
 
     #! IMPORTANT: Since DynamoDB uses eventual consistency, we need a small delay (e.g. `time.sleep(0.01)`) \
     #! to ensure the user was fully updated. In production, this should be negligible. \
@@ -208,7 +214,7 @@ async def test_queries_oauth(
     id_user = await dynamodb_user_db_oauth.get(user.id, instant_update=True)
     assert id_user is not None
     assert id_user.id == user.id
-    assert id_user.oauth_accounts[0].access_token == "NEW_TOKEN"  # type: ignore
+    assert _get_account(id_user).access_token == "NEW_TOKEN"  # type: ignore
 
     # Get by email
     email_user = await dynamodb_user_db_oauth.get_by_email(user_create["email"])
