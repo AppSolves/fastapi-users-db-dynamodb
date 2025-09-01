@@ -18,15 +18,15 @@ from tests.tables import ensure_table_exists
 
 
 class Base(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    model_config = ConfigDict(arbitrary_types_allowed=True, from_attributes=True)
 
 
 class User(DynamoDBBaseUserTableUUID, Base):
     first_name: str | None = Field(default=None, description="First name of the user")
 
 
-class OAuthBase:
-    pass
+class OAuthBase(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True, from_attributes=True)
 
 
 class OAuthAccount(DynamoDBBaseOAuthAccountTableUUID, OAuthBase):

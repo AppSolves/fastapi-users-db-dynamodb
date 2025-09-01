@@ -39,7 +39,7 @@ DATABASE_USERTABLE_PRIMARY_KEY: str = "id"
 class DynamoDBBaseUserTable(BaseModel, Generic[ID]):
     """Base user table schema for DynamoDB."""
 
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    model_config = ConfigDict(arbitrary_types_allowed=True, from_attributes=True)
 
     __tablename__ = "user"
 

@@ -26,7 +26,7 @@ DATABASE_TOKENTABLE_PRIMARY_KEY: str = "token"
 class DynamoDBBaseAccessTokenTable(BaseModel, Generic[ID]):
     """Base access token table schema for DynamoDB."""
 
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    model_config = ConfigDict(arbitrary_types_allowed=True, from_attributes=True)
 
     __tablename__ = "accesstoken"
 
