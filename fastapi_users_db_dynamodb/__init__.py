@@ -455,4 +455,4 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
                     user.oauth_accounts[idx] = type(oauth_account)(**updated_item)  # type: ignore
                     break
 
-        return await self.get(user.id)
+        return user

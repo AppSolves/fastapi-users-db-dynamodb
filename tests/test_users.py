@@ -30,7 +30,7 @@ class OAuthBase(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True, from_attributes=True)
 
 
-class OAuthAccount(DynamoDBBaseOAuthAccountTableUUID, OAuthBase):
+class OAuthAccount(OAuthBase, DynamoDBBaseOAuthAccountTableUUID):
     pass
 
 
