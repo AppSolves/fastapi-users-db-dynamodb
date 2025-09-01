@@ -3,8 +3,8 @@ from binascii import crc32
 
 import aiobotocore.endpoint
 import aiobotocore.retryhandler
-from aiobotocore.endpoint import HttpxStreamingBody, StreamingBody
-from aiobotocore.retryhandler import ChecksumError, logger
+from aiobotocore.endpoint import HttpxStreamingBody, StreamingBody  # type: ignore
+from aiobotocore.retryhandler import ChecksumError, logger  # type: ignore
 
 try:
     import httpx
@@ -83,5 +83,5 @@ async def convert_to_response_dict(http_response, operation_model):
     return response_dict
 
 
-aiobotocore.retryhandler.AioCRC32Checker._check_response = _fixed_check_response
+aiobotocore.retryhandler.AioCRC32Checker._check_response = _fixed_check_response  # type: ignore
 aiobotocore.endpoint.convert_to_response_dict = convert_to_response_dict
