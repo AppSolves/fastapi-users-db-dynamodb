@@ -11,7 +11,9 @@ from fastapi_users_db_dynamodb import (
     DynamoDBBaseUserTableUUID,
     DynamoDBUserDatabase,
 )
+from fastapi_users_db_dynamodb._aioboto3_patch import *  # noqa: F403
 from tests.conftest import DATABASE_REGION
+from tests.tables import ensure_table_exists
 
 
 class Base:
@@ -40,6 +42,7 @@ async def dynamodb_user_db() -> AsyncGenerator[DynamoDBUserDatabase, None]:
     with mock_aws():
         session = aioboto3.Session()
         table_name = "users_test"
+        await ensure_table_exists(session, table_name, DATABASE_REGION)
 
         db = DynamoDBUserDatabase(
             session,
@@ -56,6 +59,8 @@ async def dynamodb_user_db_oauth() -> AsyncGenerator[DynamoDBUserDatabase, None]
         session = aioboto3.Session()
         user_table_name = "users_test_oauth"
         oauth_table_name = "oauth_accounts_test"
+        await ensure_table_exists(session, user_table_name, DATABASE_REGION)
+        await ensure_table_exists(session, oauth_table_name, DATABASE_REGION)
 
         db = DynamoDBUserDatabase(
             session,

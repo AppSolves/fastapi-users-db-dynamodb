@@ -26,6 +26,7 @@ from boto3.dynamodb.conditions import Attr
 from fastapi_users.db.base import BaseUserDatabase
 from fastapi_users.models import ID, OAP, UP
 
+from fastapi_users_db_dynamodb._aioboto3_patch import *  # noqa: F403
 from fastapi_users_db_dynamodb.generics import GUID
 
 __version__ = "1.0.0"

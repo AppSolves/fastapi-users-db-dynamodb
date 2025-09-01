@@ -15,6 +15,8 @@ import aioboto3
 from fastapi_users.authentication.strategy.db import AP, AccessTokenDatabase
 from fastapi_users.models import ID
 
+from fastapi_users_db_dynamodb._aioboto3_patch import *  # noqa: F403
+
 
 class DynamoDBBaseAccessTokenTable(Generic[ID]):
     """Base access token table schema for DynamoDB."""

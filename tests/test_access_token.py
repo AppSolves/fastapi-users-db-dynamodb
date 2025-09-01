@@ -9,11 +9,13 @@ from moto import mock_aws
 from pydantic import UUID4
 
 from fastapi_users_db_dynamodb import DynamoDBBaseUserTableUUID, DynamoDBUserDatabase
+from fastapi_users_db_dynamodb._aioboto3_patch import *  # noqa: F403
 from fastapi_users_db_dynamodb.access_token import (
     DynamoDBAccessTokenDatabase,
     DynamoDBBaseAccessTokenTableUUID,
 )
 from tests.conftest import DATABASE_REGION
+from tests.tables import ensure_table_exists
 
 
 class Base:
@@ -41,6 +43,8 @@ async def dynamodb_access_token_db(
         session = aioboto3.Session()
         user_table_name = "users_test"
         token_table_name = "access_tokens_test"
+        await ensure_table_exists(session, user_table_name, DATABASE_REGION)
+        await ensure_table_exists(session, token_table_name, DATABASE_REGION)
 
         user_db = DynamoDBUserDatabase(
             session,
