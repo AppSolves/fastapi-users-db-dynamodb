@@ -85,7 +85,7 @@ class DynamoDBBaseOAuthAccountTable(Generic[ID]):
     )
 
 
-class DynamoDBBaseOAuthAccountTableUUID(DynamoDBBaseUserTable[UUID_ID]):
+class DynamoDBBaseOAuthAccountTableUUID(DynamoDBBaseOAuthAccountTable[UUID_ID]):
     id: UUID_ID = Field(
         default_factory=uuid.uuid4, description="The ID for the OAuth account"
     )
@@ -159,6 +159,20 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
                 table = await dynamodb.Table(table_name)
                 yield table
 
+    def _serialize_for_dynamodb(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Convert UUIDs and other incompatible types for DynamoDB."""
+        result = {}
+        for key, value in data.items():
+            if isinstance(value, uuid.UUID):
+                result[key] = str(value)
+            elif isinstance(value, list):
+                result[key] = [str(v) if isinstance(v, uuid.UUID) else v for v in value]
+            elif isinstance(value, dict):
+                result[key] = self._serialize_for_dynamodb(value)
+            else:
+                result[key] = value
+        return result
+
     def _ensure_id_str(self, value: Any) -> str:
         """Normalize id to string for DynamoDB keys."""
         return str(value)
@@ -212,12 +226,30 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
             data["email"] = data["email"].lower()
 
     async def get(self, id: ID | str) -> UP | None:
-        """Get a user by id."""
+        """Get a user by id and hydrate oauth_accounts if available."""
         id_str = self._ensure_id_str(id)
+
         async with self._table(self.user_table_name, self._resource_region) as table:
             resp = await table.get_item(Key={self.primary_key: id_str})
             item = resp.get("Item")
-            return self._item_to_user(item)
+            user = self._item_to_user(item)
+
+        if user is None:
+            return None
+
+        if self.oauth_account_table and self.oauth_account_table_name:
+            async with self._table(
+                self.oauth_account_table_name, self._resource_region
+            ) as oauth_table:
+                resp = await oauth_table.scan(
+                    FilterExpression=Attr("user_id").eq(id_str)
+                )
+                accounts = resp.get("Items", [])
+                user.oauth_accounts = [  # type: ignore
+                    self.oauth_account_table(**acc) for acc in accounts
+                ]
+
+        return user
 
     async def get_by_email(self, email: str) -> UP | None:
         """Get a user by email (case-insensitive: emails are stored lowercased)."""
@@ -230,7 +262,25 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
             items = resp.get("Items", [])
             if not items:
                 return None
-            return self._item_to_user(items[0])
+            user = self._item_to_user(items[0])
+
+        if user is None:
+            return None
+
+        user_id = self._ensure_id_str(user.id)
+        if self.oauth_account_table and self.oauth_account_table_name:
+            async with self._table(
+                self.oauth_account_table_name, self._resource_region
+            ) as oauth_table:
+                resp = await oauth_table.scan(
+                    FilterExpression=Attr("user_id").eq(user_id)
+                )
+                accounts = resp.get("Items", [])
+                user.oauth_accounts = [  # type: ignore
+                    self.oauth_account_table(**acc) for acc in accounts
+                ]
+
+        return user
 
     async def get_by_oauth_account(self, oauth: str, account_id: str) -> UP | None:
         """Find a user by oauth provider and provider account id."""
@@ -250,7 +300,7 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
                 return None
 
             user_id = items[0].get("user_id")
-            if user_id is None:
+            if not user_id:
                 return None
 
             return await self.get(user_id)
@@ -268,7 +318,7 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
         async with self._table(self.user_table_name, self._resource_region) as table:
             try:
                 await table.put_item(
-                    Item=item,
+                    Item=self._serialize_for_dynamodb(item),
                     ConditionExpression="attribute_not_exists(#id)",
                     ExpressionAttributeNames={"#id": self.primary_key},
                 )
@@ -301,7 +351,7 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
 
             try:
                 await table.put_item(
-                    Item=merged,
+                    Item=self._serialize_for_dynamodb(merged),
                     ConditionExpression="attribute_exists(#id)",
                     ExpressionAttributeNames={"#id": self.primary_key},
                 )
@@ -351,14 +401,10 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
         async with self._table(
             self.oauth_account_table_name, self._resource_region
         ) as oauth_table:
-            await oauth_table.put_item(Item=oauth_item)
+            await oauth_table.put_item(Item=self._serialize_for_dynamodb(oauth_item))
 
         if hasattr(user, "oauth_accounts"):
-            oauth_obj = (
-                self.oauth_account_table(**oauth_item)
-                if self.oauth_account_table is not None
-                else oauth_item
-            )
+            oauth_obj = self.oauth_account_table(**oauth_item)
             user.oauth_accounts.append(oauth_obj)  # type: ignore
 
         return user
@@ -368,38 +414,28 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
         user: UP,
         oauth_account: OAP,  # type: ignore
         update_dict: dict[str, Any],
-    ) -> UP:
+    ) -> UP | None:
         """Update an OAuth account and return the refreshed user (UP)."""
         if self.oauth_account_table is None or self.oauth_account_table_name is None:
             raise NotImplementedError()
 
-        oauth_id = None
-        if isinstance(oauth_account, dict):
-            oauth_id = oauth_account.get("id")
-        elif hasattr(oauth_account, "model_dump") and callable(
-            getattr(oauth_account, "model_dump")
-        ):
-            try:
-                oauth_id = oauth_account.model_dump().get("id")  # type: ignore
-            except Exception:
-                oauth_id = getattr(oauth_account, "id", None)
-        elif hasattr(oauth_account, "id"):
-            oauth_id = getattr(oauth_account, "id", None)
-        elif hasattr(oauth_account, "__dict__"):
-            oauth_id = vars(oauth_account).get("id")
+        oauth_item = (
+            oauth_account.model_dump()  # type: ignore
+            if hasattr(oauth_account, "model_dump")
+            else vars(oauth_account)
+        )
 
-        if oauth_id is None:
-            raise ValueError("oauth_account has no 'id' field")
+        updated_item = {**oauth_item, **update_dict}
 
-        oauth_id_str = self._ensure_id_str(oauth_id)
+        for field in ("id", "user_id", "oauth_name", "account_id"):
+            updated_item[field] = getattr(oauth_account, field, oauth_item.get(field))
 
         async with self._table(
             self.oauth_account_table_name, self._resource_region
         ) as oauth_table:
-            merged = {**update_dict}
             try:
                 await oauth_table.put_item(
-                    Item=merged,
+                    Item=self._serialize_for_dynamodb(updated_item),
                     ConditionExpression="attribute_exists(#id)",
                     ExpressionAttributeNames={"#id": self.primary_key},
                 )
@@ -408,20 +444,15 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
                     e.response.get("Error", {}).get("Code")
                     == "ConditionalCheckFailedException"
                 ):
-                    raise ValueError(f"User {oauth_id_str} already exists.")
+                    raise ValueError(
+                        f"OAuth account with ID {updated_item['id']} does not exist."
+                    )
                 raise
 
         if hasattr(user, "oauth_accounts"):
-            existing_oauth = next(
-                (
-                    account
-                    for account in user.oauth_accounts  # type: ignore
-                    if account.id == oauth_id_str
-                ),
-                None,
-            )
-            if existing_oauth:
-                index = user.oauth_accounts.index(existing_oauth)  # type: ignore
-                user.oauth_accounts[index] = merged  # type: ignore
+            for idx, account in enumerate(user.oauth_accounts):  # type: ignore
+                if str(getattr(account, "id", None)) == str(updated_item["id"]):
+                    user.oauth_accounts[idx] = type(oauth_account)(**updated_item)  # type: ignore
+                    break
 
-        return user
+        return await self.get(user.id)
