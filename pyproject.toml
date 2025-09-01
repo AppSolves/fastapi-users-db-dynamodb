@@ -6,6 +6,10 @@ ignore_missing_imports = true
 asyncio_mode = "strict"
 asyncio_default_fixture_loop_scope = "function"
 addopts = "--ignore=test_build.py"
+filterwarnings = [
+    "ignore::DeprecationWarning:.*datetime.datetime.utcnow.*",
+    "ignore::DeprecationWarning:.*botocore.*",
+]
 
 [tool.ruff]
 

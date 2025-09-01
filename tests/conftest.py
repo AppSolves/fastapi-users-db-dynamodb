@@ -5,6 +5,8 @@ import pytest
 from fastapi_users import schemas
 
 DATABASE_REGION: str = "eu-central-1"
+DATABASE_TOKENTABLE_PRIMARY_KEY: str = "token"
+DATABASE_USERTABLE_PRIMARY_KEY: str = "id"
 
 
 class User(schemas.BaseUser):
