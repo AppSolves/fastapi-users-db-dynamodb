@@ -75,7 +75,7 @@ description = "FastAPI Users database adapter for AWS DynamoDB"
 readme = "README.md"
 dynamic = ["version"]
 classifiers = [
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: Apache 2.0 License",
     "Development Status :: 5 - Production/Stable",
     "Framework :: FastAPI",
     "Framework :: AsyncIO",
