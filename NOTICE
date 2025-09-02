@@ -1,3 +1,8 @@
+This repository is based on François Voron's repository 'fastapi-users-db-sqlalchemy',
+which was released under the MIT License. The original license applies to any
+unmodified and original parts of the code. For the license covering this repository
+and the modifications it introduces, please refer to the LICENSE file.
+
 MIT License
 
 Copyright (c) 2021 François Voron
