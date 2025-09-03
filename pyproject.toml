@@ -24,7 +24,7 @@ allow-direct-references = true
 [tool.hatch.version]
 source = "regex_commit"
 commit_extra_args = ["-e"]
-path = "fastapi_users_db_dynamodb/__init__.py"
+path = "fastapi_users_db_dynamodb/config.py"
 
 [tool.hatch.envs.default]
 installer = "uv"
