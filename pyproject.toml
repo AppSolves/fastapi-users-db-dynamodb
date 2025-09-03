@@ -81,15 +81,13 @@ classifiers = [
     "Framework :: FastAPI",
     "Framework :: AsyncIO",
     "Intended Audience :: Developers",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3 :: Only",
     "Topic :: Internet :: WWW/HTTP :: Session",
 ]
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 dependencies = [
     "fastapi-users >= 14.0.0",
     "aiopynamodb@git+https://github.com/AppSolves/AioPynamoDB@master#egg=aiopynamodb>=1.0.1",
