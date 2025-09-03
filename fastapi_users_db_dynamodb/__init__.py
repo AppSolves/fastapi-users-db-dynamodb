@@ -195,13 +195,16 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
         else:
             user = create_dict
         try:
-            await user.save(condition=self.user_table.id.does_not_exist())  # type: ignore
+            await user.save(  # type: ignore
+                condition=self.user_table.id.does_not_exist()
+                & self.user_table.email.does_not_exist()  # type: ignore
+            )
         except PutError as e:
             if e.cause_response_code == "ConditionalCheckFailedException":
                 raise ValueError(
                     "User account could not be created because it already exists."
                 ) from e
-            raise ValueError(
+            raise ValueError(  # pragma: no cover
                 "User account could not be created because the table does not exist."
             ) from e
         return user
@@ -220,7 +223,7 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
                 raise ValueError(
                     "User account could not be updated because it does not exist."
                 ) from e
-            raise ValueError(
+            raise ValueError(  # pragma: no cover
                 "User account could not be updated because the table does not exist."
             ) from e
 
@@ -254,7 +257,7 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
                 raise ValueError(
                     "OAuth account could not be added because it already exists."
                 ) from e
-            raise ValueError(
+            raise ValueError(  # pragma: no cover
                 "OAuth account could not be added because the table does not exist."
             ) from e
 

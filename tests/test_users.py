@@ -84,6 +84,14 @@ async def test_queries(dynamodb_user_db: DynamoDBUserDatabase[User, UUID_ID]):
     # Update user
     updated_user = await dynamodb_user_db.update(user, {"is_superuser": True})
     assert updated_user.is_superuser is True
+    with pytest.raises(
+        ValueError,
+        match="User account could not be updated because it does not exist.",
+    ):
+        fake_user = User()
+        fake_user.email = "blabla@gmail.com"
+        fake_user.hashed_password = "crypticpassword"
+        await dynamodb_user_db.update(fake_user, {"is_superuser": True})
 
     # Get by id
     id_user = await dynamodb_user_db.get(user.id)
@@ -130,7 +138,13 @@ async def test_insert_existing_email(
         "email": "lancelot@camelot.bt",
         "hashed_password": "guinevere",
     }
-    await dynamodb_user_db.create(user_create)
+    user = await dynamodb_user_db.create(user_create)
+    with pytest.raises(
+        ValueError,
+        match="User account could not be created because it already exists.",
+    ):
+        user_create["id"] = str(user.id)
+        await dynamodb_user_db.create(user_create)
 
     with pytest.raises(ValueError):  # oder eigene Exception
         existing = await dynamodb_user_db.get_by_email(user_create["email"])
