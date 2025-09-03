@@ -1,79 +1,63 @@
 from collections.abc import AsyncGenerator
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 
-import aioboto3
 import pytest
 import pytest_asyncio
-from moto import mock_aws
-from pydantic import UUID4, BaseModel
+from aiopynamodb.models import Model
+from pydantic import UUID4
 
-from fastapi_users_db_dynamodb import DynamoDBBaseUserTableUUID, DynamoDBUserDatabase
-from fastapi_users_db_dynamodb._aioboto3_patch import *  # noqa: F403
+from fastapi_users_db_dynamodb import (
+    DynamoDBBaseUserTableUUID,
+    DynamoDBUserDatabase,
+    config,
+)
+from fastapi_users_db_dynamodb._generics import now_utc
 from fastapi_users_db_dynamodb.access_token import (
     DynamoDBAccessTokenDatabase,
     DynamoDBBaseAccessTokenTableUUID,
 )
-from tests.conftest import (
-    DATABASE_REGION,
-    DATABASE_TOKENTABLE_PRIMARY_KEY,
-    DATABASE_USERTABLE_PRIMARY_KEY,
-)
-from tests.tables import ensure_table_exists
 
 
-class Base(BaseModel):
+class Base(Model):
     pass
 
 
 class AccessToken(DynamoDBBaseAccessTokenTableUUID, Base):
-    pass
+    __tablename__: str = config.get("DATABASE_TOKENTABLE_NAME") + "_test"
+
+    class Meta:
+        table_name: str = config.get("DATABASE_TOKENTABLE_NAME") + "_test"
+        region: str = config.get("DATABASE_REGION")
+        billing_mode: str = config.get("DATABASE_BILLING_MODE").value
 
 
 class User(DynamoDBBaseUserTableUUID, Base):
-    pass
+    __tablename__: str = config.get("DATABASE_USERTABLE_NAME") + "_test"
+
+    class Meta:
+        table_name: str = config.get("DATABASE_USERTABLE_NAME") + "_test"
+        region: str = config.get("DATABASE_REGION")
+        billing_mode: str = config.get("DATABASE_BILLING_MODE").value
 
 
 @pytest_asyncio.fixture
 async def dynamodb_access_token_db(
     user_id: UUID4,
 ) -> AsyncGenerator[DynamoDBAccessTokenDatabase[AccessToken]]:
-    with mock_aws():
-        session = aioboto3.Session()
-        user_table_name = "users_test"
-        token_table_name = "access_tokens_test"
-        await ensure_table_exists(
-            session, user_table_name, DATABASE_USERTABLE_PRIMARY_KEY, DATABASE_REGION
+    user_db = DynamoDBUserDatabase(User)
+    user = await user_db.create(
+        User(
+            id=user_id,
+            email="lancelot@camelot.bt",
+            hashed_password="guinevere",
         )
-        await ensure_table_exists(
-            session, token_table_name, DATABASE_TOKENTABLE_PRIMARY_KEY, DATABASE_REGION
-        )
+    )
 
-        user_db = DynamoDBUserDatabase(
-            session,
-            DynamoDBBaseUserTableUUID,
-            user_table_name,
-            DATABASE_USERTABLE_PRIMARY_KEY,
-            dynamodb_resource_region=DATABASE_REGION,
-        )
-        user = await user_db.create(
-            User(
-                id=user_id,
-                email="lancelot@camelot.bt",
-                hashed_password="guinevere",
-            )  # type: ignore
-        )
+    token_db = DynamoDBAccessTokenDatabase(AccessToken)
 
-        token_db = DynamoDBAccessTokenDatabase(
-            session,
-            AccessToken,
-            token_table_name,
-            DATABASE_TOKENTABLE_PRIMARY_KEY,
-            dynamodb_resource_region=DATABASE_REGION,
-        )
+    yield token_db
 
-        yield token_db
-
-        await user_db.delete(user)
+    await user_db.delete(user)
 
 
 @pytest.mark.asyncio
@@ -89,7 +73,7 @@ async def test_queries(
     assert access_token.user_id == user_id
 
     # Update
-    new_time = datetime.now(timezone.utc)
+    new_time = now_utc()
     updated_access_token = await dynamodb_access_token_db.update(
         access_token, {"created_at": new_time}
     )
@@ -102,12 +86,12 @@ async def test_queries(
     assert token_obj is not None
 
     token_obj = await dynamodb_access_token_db.get_by_token(
-        access_token.token, max_age=datetime.now(timezone.utc) + timedelta(hours=1)
+        access_token.token, max_age=now_utc() + timedelta(hours=1)
     )
     assert token_obj is None
 
     token_obj = await dynamodb_access_token_db.get_by_token(
-        access_token.token, max_age=datetime.now(timezone.utc) - timedelta(hours=1)
+        access_token.token, max_age=now_utc() - timedelta(hours=1)
     )
     assert token_obj is not None
 
@@ -127,7 +111,11 @@ async def test_insert_existing_token(
 ):
     access_token_create = {"token": "TOKEN", "user_id": user_id}
 
+    token = await dynamodb_access_token_db.get_by_token(access_token_create["token"])
+    if token:
+        await dynamodb_access_token_db.delete(token)
+
     await dynamodb_access_token_db.create(access_token_create)
 
-    with pytest.raises(Exception):
+    with pytest.raises(ValueError):
         await dynamodb_access_token_db.create(access_token_create)

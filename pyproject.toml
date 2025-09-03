@@ -29,7 +29,7 @@ path = "fastapi_users_db_dynamodb/__init__.py"
 [tool.hatch.envs.default]
 installer = "uv"
 dependencies = [
-    "aioboto3",
+    "aiopynamodb@git+https://github.com/AppSolves/AioPynamoDB@master#egg=aiopynamodb>=1.0.1",
     "pytest",
     "pytest-asyncio",
     "black",
@@ -41,7 +41,6 @@ dependencies = [
     "asgi_lifespan",
     "ruff",
     "moto[all]",
-    "types-aioboto3",
     "types-aiobotocore",
 ]
 
@@ -91,7 +90,7 @@ classifiers = [
 requires-python = ">=3.9"
 dependencies = [
     "fastapi-users >= 14.0.0",
-    "aioboto3 >= 15.0.0",
+    "aiopynamodb@git+https://github.com/AppSolves/AioPynamoDB@master#egg=aiopynamodb>=1.0.1",
 ]
 
 [project.urls]

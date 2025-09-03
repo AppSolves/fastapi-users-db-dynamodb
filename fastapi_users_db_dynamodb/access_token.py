@@ -1,122 +1,64 @@
-"""FastAPI Users access token database adapter for AWS DynamoDB.
+"""FastAPI Users access token database adapter for AWS DynamoDB."""
 
-This adapter mirrors the SQLAlchemy adapter's public API and return types as closely
-as reasonably possible while using DynamoDB via aioboto3.
-"""
+from datetime import datetime
+from typing import TYPE_CHECKING, Any, Generic
 
-from __future__ import annotations
-
-import uuid
-from contextlib import asynccontextmanager
-from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Generic, get_type_hints
-
-import aioboto3
-from botocore.exceptions import ClientError
+from aiopynamodb.attributes import UnicodeAttribute, UTCDateTimeAttribute
+from aiopynamodb.exceptions import DeleteError, PutError
+from aiopynamodb.indexes import AllProjection, GlobalSecondaryIndex
+from aiopynamodb.models import Model
 from fastapi_users.authentication.strategy.db import AP, AccessTokenDatabase
 from fastapi_users.models import ID
-from pydantic import BaseModel, ConfigDict, Field
 
-from fastapi_users_db_dynamodb._aioboto3_patch import *  # noqa: F403
-from fastapi_users_db_dynamodb.generics import UUID_ID
+from . import config
+from ._generics import UUID_ID, now_utc
+from .attributes import GUID
+from .tables import ensure_tables_exist
 
-DATABASE_TOKENTABLE_PRIMARY_KEY: str = "token"
 
-
-class DynamoDBBaseAccessTokenTable(BaseModel, Generic[ID]):
+class DynamoDBBaseAccessTokenTable(Model, Generic[ID]):
     """Base access token table schema for DynamoDB."""
 
-    model_config = ConfigDict(arbitrary_types_allowed=True, from_attributes=True)
+    __tablename__: str = config.get("DATABASE_TOKENTABLE_NAME")
 
-    __tablename__ = "accesstoken"
+    class Meta:
+        table_name: str = config.get("DATABASE_TOKENTABLE_NAME")
+        region: str = config.get("DATABASE_REGION")
+        billing_mode: str = config.get("DATABASE_BILLING_MODE").value
 
-    token: str = Field(..., description="The token value of the AccessToken object")
-    created_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
-        description="The date of creation of the AccessToken object",
-    )
-    if TYPE_CHECKING:
+    class CreatedAtIndex(GlobalSecondaryIndex):
+        class Meta:
+            index_name: str = "created_at-index"
+            projection = AllProjection()
+
+        created_at = UnicodeAttribute(hash_key=True)
+
+    if TYPE_CHECKING:  # pragma: no cover
         user_id: ID
+        token: str
+        created_at: datetime
+    else:
+        token = UnicodeAttribute(hash_key=True)
+        created_at = UTCDateTimeAttribute(default=now_utc, null=False)
+
+    # Global Secondary Index
+    created_at_index = CreatedAtIndex()
 
 
 class DynamoDBBaseAccessTokenTableUUID(DynamoDBBaseAccessTokenTable[UUID_ID]):
-    user_id: UUID_ID = Field(..., description="The user ID this token belongs to")
+    if TYPE_CHECKING:  # pragma: no cover
+        user_id: UUID_ID
+    else:
+        user_id: GUID = GUID(null=False)
 
 
 class DynamoDBAccessTokenDatabase(Generic[AP], AccessTokenDatabase[AP]):
-    """
-    Access token database adapter for AWS DynamoDB using aioboto3.
+    """Access token database adapter for AWS DynamoDB using aiopynamodb."""
 
-    :param session: aioboto3.Session instance (not an actual DynamoDB resource).
-    :param access_token_table: Python class used to construct returned objects (callable).
-    :param table_name: DynamoDB table name for access tokens.
-    :param dynamodb_resource: Optional aioboto3 resource object (async context manager result).
-    """
-
-    session: aioboto3.Session
     access_token_table: type[AP]
-    table_name: str
-    primary_key: str = DATABASE_TOKENTABLE_PRIMARY_KEY
-    _resource: Any | None
-    _resource_region: str | None
 
-    def __init__(
-        self,
-        session: aioboto3.Session,
-        access_token_table: type[AP],
-        table_name: str,
-        primary_key: str = DATABASE_TOKENTABLE_PRIMARY_KEY,
-        dynamodb_resource: Any | None = None,
-        dynamodb_resource_region: Any | None = None,
-    ):
-        self.session = session
+    def __init__(self, access_token_table: type[AP]):
         self.access_token_table = access_token_table
-        self.table_name = table_name
-        self.primary_key = primary_key
-        self._resource = dynamodb_resource
-        self._resource_region = dynamodb_resource_region
-
-    @asynccontextmanager
-    async def _table(self, table_name: str, region: str | None = None):
-        """Async context manager that yields a Table object."""
-        if self._resource is not None:
-            table = await self._resource.Table(table_name)
-            yield table
-        else:
-            if region is None:
-                raise ValueError(
-                    "Parameter `region` must be specified when `dynamodb_resource` is omitted"
-                )
-            async with self.session.resource(
-                "dynamodb", region_name=region
-            ) as dynamodb:
-                table = await dynamodb.Table(table_name)
-                yield table
-
-    def _item_to_access_token(self, item: dict[str, Any] | None) -> AP | None:
-        """Convert a DynamoDB item (dict) to an instance of access_token_table (AP)."""
-        if item is None:
-            return None
-
-        try:
-            hints = get_type_hints(self.access_token_table)
-            if (
-                "user_id" in hints
-                and hints["user_id"] is UUID_ID
-                and isinstance(item.get("user_id"), str)
-            ):
-                item = {**item, "user_id": UUID_ID(item["user_id"])}
-
-            if "created_at" in item and isinstance(item["created_at"], str):
-                item["created_at"] = datetime.fromisoformat(item["created_at"])
-        except Exception:
-            pass
-
-        return self.access_token_table(**item)
-
-    def _ensure_token(self, token: Any) -> str:
-        """Normalize token to string for DynamoDB keys."""
-        return str(token)
 
     async def get_by_token(
         self,
@@ -125,114 +67,69 @@ class DynamoDBAccessTokenDatabase(Generic[AP], AccessTokenDatabase[AP]):
         instant_update: bool = False,
     ) -> AP | None:
         """Retrieve an access token by token string."""
-        async with self._table(self.table_name, self._resource_region) as table:
-            resp = await table.get_item(
-                Key={self.primary_key: self._ensure_token(token)},
-                ConsistentRead=instant_update,
-            )
-            item = resp.get("Item")
+        await ensure_tables_exist(self.access_token_table)  # type: ignore
 
-            if item is None:
-                return None
+        try:
+            token_obj = await self.access_token_table.get(  # type: ignore
+                token,
+                consistent_read=instant_update,
+            )
 
             if max_age is not None:
-                created_at = datetime.fromisoformat(item["created_at"])
-                if created_at < max_age:
+                if token_obj.created_at < max_age:
                     return None
+            return token_obj
+        except self.access_token_table.DoesNotExist:  # type: ignore
+            return None
 
-            return self._item_to_access_token(item)
-
-    async def create(self, create_dict: dict[str, Any]) -> AP:
+    async def create(self, create_dict: dict[str, Any] | AP) -> AP:
         """Create a new access token and return an instance of AP."""
-        item = dict(create_dict)
+        await ensure_tables_exist(self.access_token_table)  # type: ignore
 
-        if "token" not in item or item["token"] is None:
-            item["token"] = uuid.uuid4().hex[:43]
-        if "created_at" not in item or not isinstance(item["created_at"], str):
-            item["created_at"] = datetime.now(timezone.utc).isoformat()
-        if isinstance(item.get("user_id"), uuid.UUID):
-            item["user_id"] = str(item["user_id"])
-
-        async with self._table(self.table_name, self._resource_region) as table:
-            try:
-                await table.put_item(
-                    Item=item,
-                    ConditionExpression="attribute_not_exists(#token)",
-                    ExpressionAttributeNames={"#token": self.primary_key},
-                )
-            except ClientError as e:
-                if (
-                    e.response.get("Error", {}).get("Code")
-                    == "ConditionalCheckFailedException"
-                ):
-                    raise ValueError(f"Token {item['token']} already exists.")
-                raise
-
-            access_token = self._item_to_access_token(item)
-            if access_token is None:
-                raise ValueError("Could not cast DB item to AccessToken model")
-
-        return access_token
+        if isinstance(create_dict, dict):
+            token = self.access_token_table(**create_dict)
+        else:
+            token = create_dict
+        try:
+            await token.save(condition=self.access_token_table.token.does_not_exist())  # type: ignore
+        except PutError as e:
+            if e.cause_response_code == "ConditionalCheckFailedException":
+                raise ValueError(
+                    "Access token could not be created because it already exists."
+                ) from e
+            raise ValueError(
+                "Access token could not be created because the table does not exist."
+            ) from e
+        return token
 
     async def update(self, access_token: AP, update_dict: dict[str, Any]) -> AP:
         """Update an existing access token."""
+        await ensure_tables_exist(self.access_token_table)  # type: ignore
 
-        token_dict: dict = (
-            access_token.model_dump()  # type: ignore
-            if hasattr(access_token, "model_dump") and callable(access_token.model_dump)  # type: ignore
-            else vars(access_token)
-            if hasattr(access_token, "__dict__")
-            else dict(access_token)
-            if isinstance(access_token, dict)
-            else vars(access_token)
-        )
-
-        token_dict.update(update_dict)
-
-        if isinstance(token_dict.get("user_id"), uuid.UUID):
-            token_dict["user_id"] = str(token_dict["user_id"])
-        if isinstance(token_dict.get("created_at"), datetime):
-            token_dict["created_at"] = token_dict["created_at"].isoformat()
-
-        async with self._table(self.table_name, self._resource_region) as table:
-            try:
-                await table.put_item(
-                    Item=token_dict,
-                    ConditionExpression="attribute_exists(#token)",
-                    ExpressionAttributeNames={"#token": self.primary_key},
-                )
-            except ClientError as e:
-                if (
-                    e.response.get("Error", {}).get("Code")
-                    == "ConditionalCheckFailedException"
-                ):
-                    raise ValueError(f"Token {token_dict['token']} does not exist.")
-                raise
-
-        updated = self._item_to_access_token(token_dict)
-        if updated is None:
-            raise ValueError("Could not cast DB item to AccessToken model")
-        return updated
+        try:
+            for k, v in update_dict.items():
+                setattr(access_token, k, v)
+            await access_token.save(condition=self.access_token_table.token.exists())  # type: ignore
+            return access_token
+        except PutError as e:
+            if e.cause_response_code == "ConditionalCheckFailedException":
+                raise ValueError(
+                    "Access token could not be updated because it does not exist."
+                ) from e
+            raise ValueError(
+                "Access token could not be updated because the table does not exist."
+            ) from e
 
     async def delete(self, access_token: AP) -> None:
         """Delete an access token."""
-        token = getattr(access_token, "token", None) or (
-            access_token.get("token") if isinstance(access_token, dict) else None
-        )
-        if token is None:
-            raise ValueError("access_token has no 'token' field")
+        await ensure_tables_exist(self.access_token_table)  # type: ignore
 
-        async with self._table(self.table_name, self._resource_region) as table:
-            try:
-                await table.delete_item(
-                    Key={self.primary_key: self._ensure_token(token)},
-                    ConditionExpression="attribute_exists(#token)",
-                    ExpressionAttributeNames={"#token": self.primary_key},
-                )
-            except ClientError as e:
-                if (
-                    e.response.get("Error", {}).get("Code")
-                    == "ConditionalCheckFailedException"
-                ):
-                    raise ValueError(f"Token {token} does not exist.")
-                raise
+        try:
+            await access_token.delete(condition=self.access_token_table.token.exists())  # type: ignore
+        except DeleteError as e:
+            raise ValueError("Access token could not be deleted.") from e
+        except PutError as e:
+            if e.cause_response_code == "ConditionalCheckFailedException":
+                raise ValueError(
+                    "Access token could not be deleted because it does not exist."
+                ) from e
