@@ -206,13 +206,13 @@ async def test_queries_oauth(
     )
     assert _get_account(user).access_token == "NEW_TOKEN"  # type: ignore
 
-    #! IMPORTANT: Since DynamoDB uses eventual consistency, we need a small delay (e.g. `time.sleep(0.01)`) \
+    #! NOTE: Since DynamoDB uses eventual consistency, we need a small delay (e.g. `time.sleep(0.01)`) \
     #! to ensure the user was fully updated. In production, this should be negligible. \
     #! Alternatively, most methods of the `DynamoDBDatabase` class (e.g. `get`, `update`, ...) allow users \
     #! to enable consistent reads via the `instant_update` argument.
 
     # Get by id
-    id_user = await dynamodb_user_db_oauth.get(user.id, instant_update=True)
+    id_user = await dynamodb_user_db_oauth.get(user.id)
     assert id_user is not None
     assert id_user.id == user.id
     assert _get_account(id_user).access_token == "NEW_TOKEN"  # type: ignore

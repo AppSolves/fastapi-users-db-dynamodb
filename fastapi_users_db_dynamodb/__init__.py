@@ -94,6 +94,13 @@ class DynamoDBBaseOAuthAccountTable(Model, Generic[ID]):
 
         oauth_name = UnicodeAttribute(hash_key=True)
 
+    class UserIdIndex(GlobalSecondaryIndex):
+        class Meta:
+            index_name = "user_id-index"
+            projection = AllProjection()
+
+        user_id = GUID(hash_key=True)
+
     if TYPE_CHECKING:  # pragma: no cover
         id: ID
         oauth_name: str
@@ -113,6 +120,7 @@ class DynamoDBBaseOAuthAccountTable(Model, Generic[ID]):
     # Global Secondary Index
     account_id_index = AccountIdIndex()
     oauth_name_index = OAuthNameIndex()
+    user_id_index = UserIdIndex()
 
 
 class DynamoDBBaseOAuthAccountTableUUID(DynamoDBBaseOAuthAccountTable[UUID_ID]):
@@ -140,12 +148,37 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
         self.user_table = user_table
         self.oauth_account_table = oauth_account_table
 
+    async def _hydrate_oauth_accounts(
+        self,
+        user: UP,
+        instant_update: bool = False,
+    ) -> UP:
+        """
+        Populate the `oauth_accounts` list of a user by querying the OAuth table.
+        This mimics SQLAlchemy's lazy relationship loading.
+        """
+        if self.oauth_account_table is None:
+            return user
+        await ensure_tables_exist(self.oauth_account_table)
+
+        user.oauth_accounts = []  # type: ignore
+
+        async for oauth_acc in self.oauth_account_table.user_id_index.query(  # type: ignore
+            user.id,
+            consistent_read=instant_update,
+        ):
+            user.oauth_accounts.append(oauth_acc)  # type: ignore
+
+        return user
+
     async def get(self, id: ID, instant_update: bool = False) -> UP | None:
         """Get a user by id and hydrate oauth_accounts if available."""
         await ensure_tables_exist(self.user_table)  # type: ignore
 
         try:
-            return await self.user_table.get(id, consistent_read=instant_update)  # type: ignore
+            user = await self.user_table.get(id, consistent_read=instant_update)  # type: ignore
+            user = await self._hydrate_oauth_accounts(user, instant_update)
+            return user
         except self.user_table.DoesNotExist:  # type: ignore
             return None
 
@@ -157,7 +190,9 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
         async for user in self.user_table.email_index.query(  # type: ignore
             email_lower,
             consistent_read=instant_update,
+            limit=1,
         ):
+            user = await self._hydrate_oauth_accounts(user, instant_update)
             return user
         return None
 
@@ -172,18 +207,21 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
             raise NotImplementedError()
         await ensure_tables_exist(self.user_table, self.oauth_account_table)  # type: ignore
 
-        async for oauth_acc in self.oauth_account_table.oauth_name_index.query(
-            oauth,
+        async for oauth_acc in self.oauth_account_table.account_id_index.query(
+            account_id,
             consistent_read=instant_update,
+            filter_condition=self.oauth_account_table.oauth_name == oauth,  # type: ignore
+            limit=1,
         ):
-            if oauth_acc.account_id == account_id:
-                try:
-                    return await self.user_table.get(  # type: ignore
-                        oauth_acc.user_id,
-                        consistent_read=instant_update,
-                    )
-                except self.user_table.DoesNotExist:  # type: ignore # pragma: no cover
-                    return None
+            try:
+                user = await self.user_table.get(  # type: ignore
+                    oauth_acc.user_id,
+                    consistent_read=instant_update,
+                )
+                user = await self._hydrate_oauth_accounts(user, instant_update)
+                return user
+            except self.user_table.DoesNotExist:  # type: ignore # pragma: no cover
+                return None
         return None
 
     async def create(self, create_dict: dict[str, Any] | UP) -> UP:
