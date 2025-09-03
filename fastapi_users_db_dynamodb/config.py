@@ -37,12 +37,12 @@ def __create_config():
     def set(key: str, value: Any) -> None:
         if key not in __config_map:
             raise KeyError(f"Unknown config key: {key}")
-        expected_type = type(__config_map[key])
+        expected_type = type(__config_map[key])  # type: ignore[literal-required]
         if not isinstance(value, expected_type):
             raise TypeError(
                 f"Invalid type for '{key}'. Expected {expected_type.__name__}, got {type(value).__name__}."
             )
-        __config_map[key] = value
+        __config_map[key] = value  # type: ignore[literal-required]
 
     return get, set
 
