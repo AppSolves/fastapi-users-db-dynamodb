@@ -250,14 +250,17 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
         try:
             create_dict["user_id"] = getattr(create_dict, "user_id", user.id)
             oauth_account = self.oauth_account_table(**create_dict)
-            await oauth_account.save(condition=self.user_table.id.does_not_exist())
+            await oauth_account.save(
+                condition=self.oauth_account_table.id.does_not_exist()  # type: ignore
+                & self.oauth_account_table.account_id.does_not_exist()  # type: ignore
+            )
             user.oauth_accounts.append(oauth_account)  # type: ignore
-        except PutError as e:
+        except PutError as e:  # pragma: no cover
             if e.cause_response_code == "ConditionalCheckFailedException":
                 raise ValueError(
                     "OAuth account could not be added because it already exists."
                 ) from e
-            raise ValueError(  # pragma: no cover
+            raise ValueError(
                 "OAuth account could not be added because the table does not exist."
             ) from e
 
@@ -277,7 +280,10 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
         try:
             for k, v in update_dict.items():
                 setattr(oauth_account, k, v)
-            await oauth_account.save(condition=self.user_table.id.exists())  # type: ignore
+            await oauth_account.save(  # type: ignore
+                condition=self.oauth_account_table.id.exists()  # type: ignore
+                & self.oauth_account_table.account_id.exists()  # type: ignore
+            )
         except PutError as e:
             if e.cause_response_code == "ConditionalCheckFailedException":
                 raise ValueError(
