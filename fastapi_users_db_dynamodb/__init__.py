@@ -231,7 +231,9 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
         try:
             await user.delete(condition=self.user_table.id.exists())  # type: ignore
         except DeleteError as e:
-            raise ValueError("User account could not be deleted.") from e
+            raise ValueError(  # pragma: no cover
+                "User account could not be deleted."
+            ) from e
         except PutError as e:
             if e.cause_response_code == "ConditionalCheckFailedException":
                 raise ValueError(

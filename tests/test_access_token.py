@@ -98,10 +98,28 @@ async def test_queries(
     token_obj = await dynamodb_access_token_db.get_by_token("NOT_EXISTING_TOKEN")
     assert token_obj is None
 
+    # Create existing
+    with pytest.raises(
+        ValueError,
+        match="Access token could not be created because it already exists.",
+    ):
+        token = AccessToken()
+        token.token = "TOKEN"
+        token.user_id = user_id
+        await dynamodb_access_token_db.create(token)
+
     # Delete
     await dynamodb_access_token_db.delete(access_token)
     deleted_token = await dynamodb_access_token_db.get_by_token(access_token.token)
     assert deleted_token is None
+
+    # Update non-existent
+    new_time = now_utc()
+    with pytest.raises(
+        ValueError,
+        match="Access token could not be updated because it does not exist.",
+    ):
+        await dynamodb_access_token_db.update(access_token, {"created_at": new_time})
 
 
 @pytest.mark.asyncio

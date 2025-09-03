@@ -127,7 +127,9 @@ class DynamoDBAccessTokenDatabase(Generic[AP], AccessTokenDatabase[AP]):
         try:
             await access_token.delete(condition=self.access_token_table.token.exists())  # type: ignore
         except DeleteError as e:
-            raise ValueError("Access token could not be deleted.") from e
+            raise ValueError(  # pragma: no cover
+                "Access token could not be deleted."
+            ) from e
         except PutError as e:
             if e.cause_response_code == "ConditionalCheckFailedException":
                 raise ValueError(

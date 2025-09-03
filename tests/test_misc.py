@@ -3,7 +3,7 @@ from aiopynamodb.models import Model
 
 from fastapi_users_db_dynamodb import config
 from fastapi_users_db_dynamodb.attributes import GUID
-from fastapi_users_db_dynamodb.tables import ensure_tables_exist
+from fastapi_users_db_dynamodb.tables import delete_tables, ensure_tables_exist
 
 
 class NotAModel:
@@ -14,6 +14,13 @@ class IncompleteModel(Model):
     pass
 
 
+class ValidModel(Model):
+    class Meta:
+        table_name: str = "valid_model_test"
+        region: str = config.get("DATABASE_REGION")
+        billing_mode: str = config.get("DATABASE_BILLING_MODE").value
+
+
 @pytest.mark.asyncio
 async def test_tables_invalid_models(monkeypatch):
     with pytest.raises(TypeError, match="must be a subclass of Model"):
@@ -21,6 +28,14 @@ async def test_tables_invalid_models(monkeypatch):
 
     with pytest.raises(AttributeError, match="PynamoDB Models require a"):
         await ensure_tables_exist(IncompleteModel)
+
+    with pytest.raises(AttributeError, match="PynamoDB Models require a"):
+        await delete_tables(IncompleteModel)
+
+    await ensure_tables_exist(ValidModel)
+    assert await ValidModel.exists()
+    await delete_tables(ValidModel)
+    assert not await ValidModel.exists()
 
     monkeypatch.delattr(Model, "exists", raising=True)
     with pytest.raises(TypeError):
