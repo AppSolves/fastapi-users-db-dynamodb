@@ -1,13 +1,14 @@
 """FastAPI Users database adapter for AWS DynamoDB.
 
 This adapter mirrors the SQLAlchemy adapter's public API and return types as closely
-as reasonably possible while using DynamoDB via aiopynamodb.
+as reasonably possible while using DynamoDB via `aiopynamodb`.
 
 Usage notes:
 - This adapter is expected to function correctly, but it is still advisable to exercise
   caution in production environments (yet).
-- This will create non existent tables by default. You can tweak the creation inside generics.py
-- This will require ON-DEMAND mode, since traffic is unpredictable in all auth tables!
+- The Database will create non existent tables by default. You can customize the configuration
+  inside `config.py` using the `get` and `set` methods.
+- For now, tables will require ON-DEMAND mode, since traffic is unpredictable in all auth tables!
 """
 
 import uuid
@@ -23,9 +24,8 @@ from fastapi_users.models import ID, OAP, UP
 from . import config
 from ._generics import UUID_ID
 from .attributes import GUID, TransformingUnicodeAttribute
+from .config import __version__  # noqa: F401
 from .tables import ensure_tables_exist
-
-__version__: str = "1.0.0"
 
 
 class DynamoDBBaseUserTable(Model, Generic[ID]):
@@ -252,10 +252,10 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
         except PutError as e:
             if e.cause_response_code == "ConditionalCheckFailedException":
                 raise ValueError(
-                    "OAuth account could not be updated because it already exists."
+                    "OAuth account could not be added because it already exists."
                 ) from e
             raise ValueError(
-                "OAuth account could not be updated because the table does not exist."
+                "OAuth account could not be added because the table does not exist."
             ) from e
 
         return user

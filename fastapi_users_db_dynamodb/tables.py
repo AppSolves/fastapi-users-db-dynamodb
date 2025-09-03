@@ -11,6 +11,10 @@ __tables_cache: set[type[CreatableTable]] = set()
 
 
 class CreatableTable(Protocol):
+    """
+    A protocol class representing PynamoDB tables (`Model`) which can be created.
+    """
+
     @classmethod
     async def exists(cls) -> CoroutineType[Any, Any, bool] | bool: ...
 
@@ -23,7 +27,8 @@ class CreatableTable(Protocol):
     ) -> CoroutineType[Any, Any, Any] | Any: ...
 
 
-def _check_creatable_table(cls: type[Any]):
+def __check_creatable_table(cls: type[Any]):
+    """Check if an object is of type `CreatableTable`"""
     if not issubclass(cls, Model):
         raise TypeError(f"{cls.__name__} must be a subclass of Model")
     if not hasattr(cls, "exists") or not hasattr(cls, "create_table"):
@@ -38,7 +43,7 @@ async def ensure_tables_exist(*tables: type[CreatableTable]) -> None:
     global __tables_cache
 
     for table_cls in tables:
-        _check_creatable_table(table_cls)
+        __check_creatable_table(table_cls)
         if table_cls not in __tables_cache:
             if not await table_cls.exists():
                 await table_cls.create_table(

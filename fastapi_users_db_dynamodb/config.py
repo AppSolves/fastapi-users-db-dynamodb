@@ -1,6 +1,8 @@
 from enum import StrEnum
 from typing import Any, Literal, TypedDict
 
+__version__: str = "1.0.0"
+
 
 # Right now, only ON-DEMAND mode is supported!
 class BillingMode(StrEnum):
