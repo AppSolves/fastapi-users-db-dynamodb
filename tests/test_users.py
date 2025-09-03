@@ -107,6 +107,8 @@ async def test_queries(dynamodb_user_db: DynamoDBUserDatabase[User, UUID_ID]):
 
     # Delete user
     await dynamodb_user_db.delete(user)
+    with pytest.raises(ValueError, match="User account could not be deleted"):
+        await dynamodb_user_db.delete(user)
     deleted_user = await dynamodb_user_db.get(user.id)
     assert deleted_user is None
 
@@ -160,6 +162,7 @@ async def test_queries_oauth(
     dynamodb_user_db_oauth: DynamoDBUserDatabase[UserOAuth, UUID_ID],
     oauth_account1: dict[str, Any],
     oauth_account2: dict[str, Any],
+    user_id: UUID_ID,
 ):
     # Test OAuth accounts
     user_create = {"email": "lancelot@camelot.bt", "hashed_password": "guinevere"}
@@ -216,3 +219,19 @@ async def test_queries_oauth(
     # Unknown OAuth account
     unknown_oauth_user = await dynamodb_user_db_oauth.get_by_oauth_account("foo", "bar")
     assert unknown_oauth_user is None
+
+    with pytest.raises(
+        ValueError,
+        match="OAuth account could not be updated because it does not exist.",
+    ):
+        user = UserOAuth()
+        oauth_account = OAuthAccount()
+        oauth_account.user_id = user_id
+        oauth_account.oauth_name = "blabla_provider"
+        oauth_account.account_id = "blabla_id"
+        oauth_account.account_email = "blabla@gmail.com"
+        await dynamodb_user_db_oauth.update_oauth_account(
+            user,
+            oauth_account,
+            {"access_token": "NEW_TOKEN"},
+        )

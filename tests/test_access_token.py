@@ -110,6 +110,9 @@ async def test_queries(
 
     # Delete
     await dynamodb_access_token_db.delete(access_token)
+    with pytest.raises(ValueError, match="Access token could not be deleted"):
+        await dynamodb_access_token_db.delete(access_token)
+
     deleted_token = await dynamodb_access_token_db.get_by_token(access_token.token)
     assert deleted_token is None
 

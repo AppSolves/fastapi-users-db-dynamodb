@@ -97,7 +97,7 @@ class DynamoDBAccessTokenDatabase(Generic[AP], AccessTokenDatabase[AP]):
                 raise ValueError(
                     "Access token could not be created because it already exists."
                 ) from e
-            raise ValueError(
+            raise ValueError(  # pragma: no cover
                 "Access token could not be created because the table does not exist."
             ) from e
         return token
@@ -116,7 +116,7 @@ class DynamoDBAccessTokenDatabase(Generic[AP], AccessTokenDatabase[AP]):
                 raise ValueError(
                     "Access token could not be updated because it does not exist."
                 ) from e
-            raise ValueError(
+            raise ValueError(  # pragma: no cover
                 "Access token could not be updated because the table does not exist."
             ) from e
 
@@ -127,10 +127,8 @@ class DynamoDBAccessTokenDatabase(Generic[AP], AccessTokenDatabase[AP]):
         try:
             await access_token.delete(condition=self.access_token_table.token.exists())  # type: ignore
         except DeleteError as e:
-            raise ValueError(  # pragma: no cover
-                "Access token could not be deleted."
-            ) from e
-        except PutError as e:
+            raise ValueError("Access token could not be deleted.") from e
+        except PutError as e:  # pragma: no cover
             if e.cause_response_code == "ConditionalCheckFailedException":
                 raise ValueError(
                     "Access token could not be deleted because it does not exist."

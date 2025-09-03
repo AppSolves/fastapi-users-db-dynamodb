@@ -182,7 +182,7 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
                         oauth_acc.user_id,
                         consistent_read=instant_update,
                     )
-                except self.user_table.DoesNotExist:  # type: ignore
+                except self.user_table.DoesNotExist:  # type: ignore # pragma: no cover
                     return None
         return None
 
@@ -231,10 +231,8 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
         try:
             await user.delete(condition=self.user_table.id.exists())  # type: ignore
         except DeleteError as e:
-            raise ValueError(  # pragma: no cover
-                "User account could not be deleted."
-            ) from e
-        except PutError as e:
+            raise ValueError("User account could not be deleted.") from e
+        except PutError as e:  # pragma: no cover
             if e.cause_response_code == "ConditionalCheckFailedException":
                 raise ValueError(
                     "User account could not be deleted because it does not exist."
@@ -282,7 +280,7 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
                 raise ValueError(
                     "OAuth account could not be updated because it does not exist."
                 ) from e
-            raise ValueError(
+            raise ValueError(  # pragma: no cover
                 "OAuth account could not be updated because the table does not exist."
             ) from e
 
