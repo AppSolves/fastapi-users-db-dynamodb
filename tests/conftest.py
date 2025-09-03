@@ -1,5 +1,5 @@
 import uuid
-from typing import Any, Optional
+from typing import Any
 
 import pytest
 from fastapi_users import schemas
@@ -8,11 +8,11 @@ from pydantic import UUID4
 
 
 class User(schemas.BaseUser):
-    first_name: Optional[str]
+    first_name: str | None
 
 
 class UserCreate(schemas.BaseUserCreate):
-    first_name: Optional[str]
+    first_name: str | None
 
 
 class UserUpdate(schemas.BaseUserUpdate):

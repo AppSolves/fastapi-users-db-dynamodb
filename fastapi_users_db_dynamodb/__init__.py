@@ -12,7 +12,7 @@ Usage notes:
 """
 
 import uuid
-from typing import TYPE_CHECKING, Any, Generic, Optional
+from typing import TYPE_CHECKING, Any, Generic
 
 from aiopynamodb.attributes import BooleanAttribute, NumberAttribute, UnicodeAttribute
 from aiopynamodb.exceptions import DeleteError, PutError
@@ -105,8 +105,8 @@ class DynamoDBBaseOAuthAccountTable(Model, Generic[ID]):
         id: ID
         oauth_name: str
         access_token: str
-        expires_at: Optional[int]
-        refresh_token: Optional[str]
+        expires_at: int | None
+        refresh_token: str | None
         account_id: str
         account_email: str
     else:

@@ -1,4 +1,4 @@
-from typing import Callable
+from collections.abc import Callable
 
 from aiopynamodb.attributes import Attribute, UnicodeAttribute
 from aiopynamodb.constants import STRING
