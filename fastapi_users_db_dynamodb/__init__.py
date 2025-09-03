@@ -1,300 +1,200 @@
 """FastAPI Users database adapter for AWS DynamoDB.
 
 This adapter mirrors the SQLAlchemy adapter's public API and return types as closely
-as reasonably possible while using DynamoDB via aioboto3.
+as reasonably possible while using DynamoDB via `aiopynamodb`.
 
 Usage notes:
-- You can pass a long-lived aioboto3 resource (created once during app startup)
-  via the `dynamodb_resource` parameter to avoid creating a resource on every call:
-      async with aioboto3.Session().resource("dynamodb", region_name=...) as resource:
-          adapter = DynamoDBUserDatabase(
-              session, user_table, "users", oauth_account_table, "oauth_accounts",
-              dynamodb_resource=resource
-          )
-  If you don't provide `dynamodb_resource`, this adapter will create a short-lived
-  resource per operation (safe, but less optimal).
+- This adapter is expected to function correctly, but it is still advisable to exercise
+  caution in production environments (yet).
+- The Database will create non existent tables by default. You can customize the configuration
+  inside `config.py` using the `get` and `set` methods.
+- For now, tables will require ON-DEMAND mode, since traffic is unpredictable in all auth tables!
 """
 
-from __future__ import annotations
-
 import uuid
-from contextlib import asynccontextmanager
-from typing import TYPE_CHECKING, Any, Generic, get_type_hints
+from typing import TYPE_CHECKING, Any, Generic, Optional
 
-import aioboto3
-from boto3.dynamodb.conditions import Attr
-from botocore.exceptions import ClientError
+from aiopynamodb.attributes import BooleanAttribute, NumberAttribute, UnicodeAttribute
+from aiopynamodb.exceptions import DeleteError, PutError
+from aiopynamodb.indexes import AllProjection, GlobalSecondaryIndex
+from aiopynamodb.models import Model
 from fastapi_users.db.base import BaseUserDatabase
 from fastapi_users.models import ID, OAP, UP
-from pydantic import BaseModel, ConfigDict, Field
 
-from fastapi_users_db_dynamodb._aioboto3_patch import *  # noqa: F403
-from fastapi_users_db_dynamodb.generics import UUID_ID
-
-__version__ = "1.0.0"
-
-DATABASE_USERTABLE_PRIMARY_KEY: str = "id"
+from . import config
+from ._generics import UUID_ID
+from .attributes import GUID, TransformingUnicodeAttribute
+from .config import __version__  # noqa: F401
+from .tables import ensure_tables_exist
 
 
-class DynamoDBBaseUserTable(BaseModel, Generic[ID]):
+class DynamoDBBaseUserTable(Model, Generic[ID]):
     """Base user table schema for DynamoDB."""
 
-    model_config = ConfigDict(arbitrary_types_allowed=True, from_attributes=True)
+    __tablename__: str = config.get("DATABASE_USERTABLE_NAME")
 
-    __tablename__ = "user"
+    class Meta:
+        table_name: str = config.get("DATABASE_USERTABLE_NAME")
+        region: str = config.get("DATABASE_REGION")
+        billing_mode: str = config.get("DATABASE_BILLING_MODE").value
 
-    if TYPE_CHECKING:
+    class EmailIndex(GlobalSecondaryIndex):
+        class Meta:
+            index_name: str = "email-index"
+            projection = AllProjection()
+
+        email = TransformingUnicodeAttribute(transform=str.lower, hash_key=True)
+
+    if TYPE_CHECKING:  # pragma: no cover
         id: ID
-    email: str = Field(..., description="The email of the user")
-    hashed_password: str = Field(..., description="The hashed password of the user")
-    is_active: bool = Field(
-        default=True, description="Whether the user is marked as active in the database"
-    )
-    is_superuser: bool = Field(
-        default=False, description="Whether the user has admin rights"
-    )
-    is_verified: bool = Field(
-        default=False, description="Whether the user has verified their email"
-    )
+        email: str
+        hashed_password: str
+        is_active: bool
+        is_superuser: bool
+        is_verified: bool
+    else:
+        email = TransformingUnicodeAttribute(transform=str.lower, null=False)
+        hashed_password = UnicodeAttribute(null=False)
+        is_active = BooleanAttribute(default=True, null=False)
+        is_superuser = BooleanAttribute(default=False, null=False)
+        is_verified = BooleanAttribute(default=False, null=False)
+
+    # Global Secondary Index
+    email_index = EmailIndex()
 
 
 class DynamoDBBaseUserTableUUID(DynamoDBBaseUserTable[UUID_ID]):
-    id: UUID_ID = Field(default_factory=uuid.uuid4, description="The ID for the user")
+    if TYPE_CHECKING:  # pragma: no cover
+        id: UUID_ID
+    else:
+        id: GUID = GUID(hash_key=True, default=uuid.uuid4)
 
 
-class DynamoDBBaseOAuthAccountTable(Generic[ID]):
+class DynamoDBBaseOAuthAccountTable(Model, Generic[ID]):
     """Base OAuth account table schema for DynamoDB."""
 
-    __tablename__ = "oauth_account"
+    __tablename__: str = config.get("DATABASE_OAUTHTABLE_NAME")
 
-    if TYPE_CHECKING:
+    class Meta:
+        table_name: str = config.get("DATABASE_OAUTHTABLE_NAME")
+        region: str = config.get("DATABASE_REGION")
+        billing_mode: str = config.get("DATABASE_BILLING_MODE").value
+
+    class AccountIdIndex(GlobalSecondaryIndex):
+        class Meta:
+            index_name: str = "account_id-index"
+            projection = AllProjection()
+
+        account_id = UnicodeAttribute(hash_key=True)
+
+    class OAuthNameIndex(GlobalSecondaryIndex):
+        class Meta:
+            index_name: str = "oauth_name-index"
+            projection = AllProjection()
+
+        oauth_name = UnicodeAttribute(hash_key=True)
+
+    class UserIdIndex(GlobalSecondaryIndex):
+        class Meta:
+            index_name = "user_id-index"
+            projection = AllProjection()
+
+        user_id = GUID(hash_key=True)
+
+    if TYPE_CHECKING:  # pragma: no cover
         id: ID
-    oauth_name: str = Field(..., description="The name of the OAuth social provider")
-    access_token: str = Field(
-        ..., description="The access token linked with the OAuth account"
-    )
-    expires_at: int | None = Field(
-        default=None, description="The timestamp at which this account expires"
-    )
-    refresh_token: str | None = Field(
-        default=None, description="The refresh token associated with this OAuth account"
-    )
-    account_id: str = Field(..., description="The ID of this OAuth account")
-    account_email: str = Field(
-        ..., description="The email associated with this OAuth account"
-    )
+        oauth_name: str
+        access_token: str
+        expires_at: Optional[int]
+        refresh_token: Optional[str]
+        account_id: str
+        account_email: str
+    else:
+        oauth_name = UnicodeAttribute(null=False)
+        access_token = UnicodeAttribute(null=False)
+        expires_at = NumberAttribute(null=True)
+        refresh_token = UnicodeAttribute(null=True)
+        account_id = UnicodeAttribute(null=False)
+        account_email = TransformingUnicodeAttribute(transform=str.lower, null=False)
+
+    # Global Secondary Index
+    account_id_index = AccountIdIndex()
+    oauth_name_index = OAuthNameIndex()
+    user_id_index = UserIdIndex()
 
 
 class DynamoDBBaseOAuthAccountTableUUID(DynamoDBBaseOAuthAccountTable[UUID_ID]):
-    id: UUID_ID = Field(
-        default_factory=uuid.uuid4, description="The ID for the OAuth account"
-    )
-    user_id: UUID_ID = Field(
-        ..., description="The user ID this OAuth account belongs to"
-    )
+    if TYPE_CHECKING:  # pragma: no cover
+        id: UUID_ID
+        user_id: UUID_ID
+    else:
+        id: GUID = GUID(hash_key=True, default=uuid.uuid4)
+        user_id: GUID = GUID(null=False)
 
 
 class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
     """
-    Database adapter for AWS DynamoDB using aioboto3.
-
-    :param session: aioboto3.Session instance (not an actual DynamoDB resource).
-    :param user_table: Python class used to construct returned user objects (callable).
-    :param user_table_name: DynamoDB table name for users.
-    :param oauth_account_table: Optional class to construct oauth-account objects.
-    :param oauth_table_name: Optional DynamoDB table name for oauth accounts.
-    :param dynamodb_resource: Optional aioboto3 resource object (async context manager result)
-                              created with `async with session.resource("dynamodb") as r:`. If
-                              provided, the adapter will reuse it (recommended).
+    Database adapter for AWS DynamoDB using aiopynamodb.
     """
 
-    session: aioboto3.Session
     user_table: type[UP]
     oauth_account_table: type[DynamoDBBaseOAuthAccountTable] | None
-    user_table_name: str
-    primary_key: str = DATABASE_USERTABLE_PRIMARY_KEY
-    oauth_account_table_name: str | None
-    _resource: Any | None
-    _resource_region: str | None
 
     def __init__(
         self,
-        session: aioboto3.Session,
         user_table: type[UP],
-        user_table_name: str,
-        primary_key: str = DATABASE_USERTABLE_PRIMARY_KEY,
         oauth_account_table: type[DynamoDBBaseOAuthAccountTable] | None = None,
-        oauth_account_table_name: str | None = None,
-        dynamodb_resource: Any | None = None,
-        dynamodb_resource_region: str | None = None,
     ):
-        self.session = session
         self.user_table = user_table
         self.oauth_account_table = oauth_account_table
-        self.user_table_name = user_table_name
-        self.primary_key = primary_key
-        self.oauth_account_table_name = oauth_account_table_name
 
-        self._resource = dynamodb_resource
-        self._resource_region = dynamodb_resource_region
-
-    @asynccontextmanager
-    async def _table(self, table_name: str, region: str | None = None):
-        """Async context manager that yields a Table object.
-
-        If a long-lived resource was provided at init, it's reused (no enter/exit).
-        Otherwise a short-lived resource is created and cleaned up per call.
+    async def _hydrate_oauth_accounts(
+        self,
+        user: UP,
+        instant_update: bool = False,
+    ) -> UP:
         """
-        if self._resource is not None:
-            table = await self._resource.Table(table_name)
-            yield table
-        else:
-            if region is None:
-                raise ValueError(
-                    "Parameter `region` must be specified when `dynamodb_resource` is omitted"
-                )
-            async with self.session.resource(
-                "dynamodb", region_name=region
-            ) as dynamodb:
-                table = await dynamodb.Table(table_name)
-                yield table
+        Populate the `oauth_accounts` list of a user by querying the OAuth table.
+        This mimics SQLAlchemy's lazy relationship loading.
+        """
+        if self.oauth_account_table is None:
+            return user
+        await ensure_tables_exist(self.oauth_account_table)
 
-    def _serialize_for_dynamodb(self, data: dict[str, Any]) -> dict[str, Any]:
-        """Convert UUIDs and other incompatible types for DynamoDB."""
-        result = {}
-        for key, value in data.items():
-            if isinstance(value, uuid.UUID):
-                result[key] = str(value)
-            elif isinstance(value, list):
-                result[key] = [str(v) if isinstance(v, uuid.UUID) else v for v in value]
-            elif isinstance(value, dict):
-                result[key] = self._serialize_for_dynamodb(value)
-            else:
-                result[key] = value
-        return result
+        user.oauth_accounts = []  # type: ignore
 
-    def _ensure_id_str(self, value: Any) -> str:
-        """Normalize id to string for DynamoDB keys."""
-        return str(value)
-
-    def _extract_id_from_user(self, user_obj: Any) -> str:
-        """Extract the `id` from a user object/dict/ORM/Pydantic model."""
-
-        if isinstance(user_obj, dict):
-            idv = user_obj.get("id")
-
-        elif hasattr(user_obj, "model_dump") and callable(
-            getattr(user_obj, "model_dump")
+        async for oauth_acc in self.oauth_account_table.user_id_index.query(  # type: ignore
+            user.id,
+            consistent_read=instant_update,
         ):
-            try:
-                idv = user_obj.model_dump().get("id")
-            except Exception:
-                idv = getattr(user_obj, "id", None)
+            user.oauth_accounts.append(oauth_acc)  # type: ignore
 
-        elif hasattr(user_obj, "id"):
-            idv = getattr(user_obj, "id", None)
+        return user
 
-        elif hasattr(user_obj, "__dict__"):
-            idv = vars(user_obj).get("id")
-        else:
-            raise ValueError("Cannot extract 'id' from provided user object")
-        if idv is None:
-            raise ValueError("User object has no 'id' field")
-        return self._ensure_id_str(idv)
-
-    def _item_to_user(self, item: dict[str, Any] | None) -> UP | None:
-        """Convert a DynamoDB item (dict) to an instance of user_table (UP)."""
-        if item is None:
-            return None
+    async def get(self, id: ID, instant_update: bool = False) -> UP | None:
+        """Get a user by id and hydrate oauth_accounts if available."""
+        await ensure_tables_exist(self.user_table)  # type: ignore
 
         try:
-            hints = get_type_hints(self.user_table)
-            if (
-                "id" in hints
-                and hints["id"] is uuid.UUID
-                and isinstance(item.get("id"), str)
-            ):
-                item = {**item, "id": uuid.UUID(item["id"])}
-        except Exception:
-            pass
-
-        return self.user_table(**item)
-
-    def _ensure_email_lower(self, data: dict[str, Any]) -> None:
-        """Lower-case email in-place if present."""
-        if "email" in data and isinstance(data["email"], str):
-            data["email"] = data["email"].lower()
-
-    async def get(
-        self,
-        id: ID | str,
-        instant_update: bool = False,
-    ) -> UP | None:
-        """Get a user by id and hydrate oauth_accounts if available."""
-        id_str = self._ensure_id_str(id)
-
-        async with self._table(self.user_table_name, self._resource_region) as table:
-            resp = await table.get_item(
-                Key={self.primary_key: id_str},
-                ConsistentRead=instant_update,
-            )
-            item = resp.get("Item")
-            user = self._item_to_user(item)
-
-        if user is None:
+            user = await self.user_table.get(id, consistent_read=instant_update)  # type: ignore
+            user = await self._hydrate_oauth_accounts(user, instant_update)
+            return user
+        except self.user_table.DoesNotExist:  # type: ignore
             return None
 
-        if self.oauth_account_table and self.oauth_account_table_name:
-            async with self._table(
-                self.oauth_account_table_name, self._resource_region
-            ) as oauth_table:
-                resp = await oauth_table.scan(
-                    FilterExpression=Attr("user_id").eq(id_str),
-                    ConsistentRead=instant_update,
-                )
-                accounts = resp.get("Items", [])
-                user.oauth_accounts = [  # type: ignore
-                    self.oauth_account_table(**acc) for acc in accounts
-                ]
+    async def get_by_email(self, email: str, instant_update: bool = False) -> UP | None:
+        """Get a user by email using the email GSI (case-insensitive)."""
+        await ensure_tables_exist(self.user_table)  # type: ignore
 
-        return user
-
-    async def get_by_email(
-        self,
-        email: str,
-        instant_update: bool = False,
-    ) -> UP | None:
-        """Get a user by email (case-insensitive: emails are stored lowercased)."""
-        email_norm = email.lower()
-        async with self._table(self.user_table_name, self._resource_region) as table:
-            resp = await table.scan(
-                FilterExpression=Attr("email").eq(email_norm),
-                Limit=1,
-                ConsistentRead=instant_update,
-            )
-            items = resp.get("Items", [])
-            if not items:
-                return None
-            user = self._item_to_user(items[0])
-
-        if user is None:
-            return None
-
-        user_id = self._ensure_id_str(user.id)
-        if self.oauth_account_table and self.oauth_account_table_name:
-            async with self._table(
-                self.oauth_account_table_name, self._resource_region
-            ) as oauth_table:
-                resp = await oauth_table.scan(
-                    FilterExpression=Attr("user_id").eq(user_id),
-                    ConsistentRead=instant_update,
-                )
-                accounts = resp.get("Items", [])
-                user.oauth_accounts = [  # type: ignore
-                    self.oauth_account_table(**acc) for acc in accounts
-                ]
-
-        return user
+        email_lower = email.lower()
+        async for user in self.user_table.email_index.query(  # type: ignore
+            email_lower,
+            consistent_read=instant_update,
+            limit=1,
+        ):
+            user = await self._hydrate_oauth_accounts(user, instant_update)
+            return user
+        return None
 
     async def get_by_oauth_account(
         self,
@@ -302,138 +202,105 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
         account_id: str,
         instant_update: bool = False,
     ) -> UP | None:
-        """Find a user by oauth provider and provider account id."""
-        if self.oauth_account_table is None or self.oauth_account_table_name is None:
+        """Find a user by oauth provider and account_id."""
+        if self.oauth_account_table is None:
             raise NotImplementedError()
+        await ensure_tables_exist(self.user_table, self.oauth_account_table)  # type: ignore
 
-        async with self._table(
-            self.oauth_account_table_name, self._resource_region
-        ) as oauth_table:
-            resp = await oauth_table.scan(
-                FilterExpression=Attr("oauth_name").eq(oauth)
-                & Attr("account_id").eq(account_id),
-                Limit=1,
-                ConsistentRead=instant_update,
-            )
-            items = resp.get("Items", [])
-            if not items:
+        async for oauth_acc in self.oauth_account_table.account_id_index.query(
+            account_id,
+            consistent_read=instant_update,
+            filter_condition=self.oauth_account_table.oauth_name == oauth,  # type: ignore
+            limit=1,
+        ):
+            try:
+                user = await self.user_table.get(  # type: ignore
+                    oauth_acc.user_id,
+                    consistent_read=instant_update,
+                )
+                user = await self._hydrate_oauth_accounts(user, instant_update)
+                return user
+            except self.user_table.DoesNotExist:  # type: ignore # pragma: no cover
                 return None
+        return None
 
-            user_id = items[0].get("user_id")
-            if not user_id:
-                return None
-
-            return await self.get(user_id)
-
-    async def create(self, create_dict: dict[str, Any]) -> UP:
+    async def create(self, create_dict: dict[str, Any] | UP) -> UP:
         """Create a new user and return an instance of UP."""
-        item = dict(create_dict)
-        if "id" not in item or item["id"] is None:
-            item["id"] = str(uuid.uuid4())
+        await ensure_tables_exist(self.user_table)  # type: ignore
+
+        if isinstance(create_dict, dict):
+            user = self.user_table(**create_dict)
         else:
-            item["id"] = self._ensure_id_str(item["id"])
-
-        self._ensure_email_lower(item)
-
-        async with self._table(self.user_table_name, self._resource_region) as table:
-            try:
-                await table.put_item(
-                    Item=self._serialize_for_dynamodb(item),
-                    ConditionExpression="attribute_not_exists(#id)",
-                    ExpressionAttributeNames={"#id": self.primary_key},
-                )
-            except ClientError as e:
-                if (
-                    e.response.get("Error", {}).get("Code")
-                    == "ConditionalCheckFailedException"
-                ):
-                    raise ValueError(f"User {item['id']} already exists.")
-                raise
-
-        refreshed_user = self._item_to_user(item)
-        if refreshed_user is None:
-            raise ValueError("Could not cast DB item to User model")
-        return refreshed_user
-
-    async def update(
-        self,
-        user: UP,
-        update_dict: dict[str, Any],
-        instant_update: bool = False,
-    ) -> UP:
-        """Update a user with update_dict and return the updated UP instance."""
-        user_id = self._extract_id_from_user(user)
-        async with self._table(self.user_table_name, self._resource_region) as table:
-            resp = await table.get_item(
-                Key={self.primary_key: user_id},
-                ConsistentRead=instant_update,
+            user = create_dict
+        try:
+            await user.save(  # type: ignore
+                condition=self.user_table.id.does_not_exist()
+                & self.user_table.email.does_not_exist()  # type: ignore
             )
-            current = resp.get("Item", None)
+        except PutError as e:
+            if e.cause_response_code == "ConditionalCheckFailedException":
+                raise ValueError(
+                    "User account could not be created because it already exists."
+                ) from e
+            raise ValueError(  # pragma: no cover
+                "User account could not be created because the table does not exist."
+            ) from e
+        return user
 
-            if not current:
-                raise ValueError("User not found")
+    async def update(self, user: UP, update_dict: dict[str, Any]) -> UP:
+        """Update a user with update_dict and return the updated UP instance."""
+        await ensure_tables_exist(self.user_table)  # type: ignore
 
-            merged = {**current, **update_dict}
-
-            self._ensure_email_lower(merged)
-
-            try:
-                await table.put_item(
-                    Item=self._serialize_for_dynamodb(merged),
-                    ConditionExpression="attribute_exists(#id)",
-                    ExpressionAttributeNames={"#id": self.primary_key},
-                )
-            except ClientError as e:
-                if (
-                    e.response.get("Error", {}).get("Code")
-                    == "ConditionalCheckFailedException"
-                ):
-                    raise ValueError(f"User {user_id} does not exist.")
-                raise
-
-        refreshed_user = self._item_to_user(merged)
-        if refreshed_user is None:
-            raise ValueError("Could not cast DB item to User model")
-        return refreshed_user
+        try:
+            for k, v in update_dict.items():
+                setattr(user, k, v)
+            await user.save(condition=self.user_table.id.exists())  # type: ignore
+            return user
+        except PutError as e:
+            if e.cause_response_code == "ConditionalCheckFailedException":
+                raise ValueError(
+                    "User account could not be updated because it does not exist."
+                ) from e
+            raise ValueError(  # pragma: no cover
+                "User account could not be updated because the table does not exist."
+            ) from e
 
     async def delete(self, user: UP) -> None:
         """Delete a user."""
-        user_id = self._extract_id_from_user(user)
-        async with self._table(self.user_table_name, self._resource_region) as table:
-            try:
-                await table.delete_item(
-                    Key={self.primary_key: user_id},
-                    ConditionExpression="attribute_exists(#id)",
-                    ExpressionAttributeNames={"#id": self.primary_key},
-                )
-            except ClientError as e:
-                if (
-                    e.response.get("Error", {}).get("Code")
-                    == "ConditionalCheckFailedException"
-                ):
-                    raise ValueError(f"User {user_id} does not exist.")
-                raise
+        await ensure_tables_exist(self.user_table)  # type: ignore
+
+        try:
+            await user.delete(condition=self.user_table.id.exists())  # type: ignore
+        except DeleteError as e:
+            raise ValueError("User account could not be deleted.") from e
+        except PutError as e:  # pragma: no cover
+            if e.cause_response_code == "ConditionalCheckFailedException":
+                raise ValueError(
+                    "User account could not be deleted because it does not exist."
+                ) from e
 
     async def add_oauth_account(self, user: UP, create_dict: dict[str, Any]) -> UP:
-        """Add an OAuth account for `user`. Returns the refreshed user (UP)."""
-        if self.oauth_account_table is None or self.oauth_account_table_name is None:
+        """Add an OAuth account and return the refreshed user (UP)."""
+        if self.oauth_account_table is None:
             raise NotImplementedError()
+        await ensure_tables_exist(self.user_table, self.oauth_account_table)  # type: ignore
 
-        oauth_item = dict(create_dict)
-        if "id" not in oauth_item or oauth_item["id"] is None:
-            oauth_item["id"] = str(uuid.uuid4())
-
-        user_id = self._extract_id_from_user(user)
-        oauth_item["user_id"] = user_id
-
-        async with self._table(
-            self.oauth_account_table_name, self._resource_region
-        ) as oauth_table:
-            await oauth_table.put_item(Item=self._serialize_for_dynamodb(oauth_item))
-
-        if hasattr(user, "oauth_accounts"):
-            oauth_obj = self.oauth_account_table(**oauth_item)
-            user.oauth_accounts.append(oauth_obj)  # type: ignore
+        try:
+            create_dict["user_id"] = getattr(create_dict, "user_id", user.id)
+            oauth_account = self.oauth_account_table(**create_dict)
+            await oauth_account.save(
+                condition=self.oauth_account_table.id.does_not_exist()  # type: ignore
+                & self.oauth_account_table.account_id.does_not_exist()  # type: ignore
+            )
+            user.oauth_accounts.append(oauth_account)  # type: ignore
+        except PutError as e:  # pragma: no cover
+            if e.cause_response_code == "ConditionalCheckFailedException":
+                raise ValueError(
+                    "OAuth account could not be added because it already exists."
+                ) from e
+            raise ValueError(
+                "OAuth account could not be added because the table does not exist."
+            ) from e
 
         return user
 
@@ -444,43 +311,30 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
         update_dict: dict[str, Any],
     ) -> UP:
         """Update an OAuth account and return the refreshed user (UP)."""
-        if self.oauth_account_table is None or self.oauth_account_table_name is None:
+        if self.oauth_account_table is None:
             raise NotImplementedError()
+        await ensure_tables_exist(self.user_table, self.oauth_account_table)  # type: ignore
 
-        oauth_item = (
-            oauth_account.model_dump()  # type: ignore
-            if hasattr(oauth_account, "model_dump")
-            else vars(oauth_account)
-        )
+        try:
+            for k, v in update_dict.items():
+                setattr(oauth_account, k, v)
+            await oauth_account.save(  # type: ignore
+                condition=self.oauth_account_table.id.exists()  # type: ignore
+                & self.oauth_account_table.account_id.exists()  # type: ignore
+            )
+        except PutError as e:
+            if e.cause_response_code == "ConditionalCheckFailedException":
+                raise ValueError(
+                    "OAuth account could not be updated because it does not exist."
+                ) from e
+            raise ValueError(  # pragma: no cover
+                "OAuth account could not be updated because the table does not exist."
+            ) from e
 
-        updated_item = {**oauth_item, **update_dict}
-
-        for field in ("id", "user_id", "oauth_name", "account_id"):
-            updated_item[field] = getattr(oauth_account, field, oauth_item.get(field))
-
-        async with self._table(
-            self.oauth_account_table_name, self._resource_region
-        ) as oauth_table:
-            try:
-                await oauth_table.put_item(
-                    Item=self._serialize_for_dynamodb(updated_item),
-                    ConditionExpression="attribute_exists(#id)",
-                    ExpressionAttributeNames={"#id": self.primary_key},
-                )
-            except ClientError as e:
-                if (
-                    e.response.get("Error", {}).get("Code")
-                    == "ConditionalCheckFailedException"
-                ):
-                    raise ValueError(
-                        f"OAuth account with ID {updated_item['id']} does not exist."
-                    )
-                raise
-
-        if hasattr(user, "oauth_accounts"):
-            for idx, account in enumerate(user.oauth_accounts):  # type: ignore
-                if str(getattr(account, "id", None)) == str(updated_item["id"]):
-                    user.oauth_accounts[idx] = type(oauth_account)(**updated_item)  # type: ignore
-                    break
+        for acc in user.oauth_accounts:  # type: ignore
+            if acc.id == oauth_account.id:
+                for k, v in update_dict.items():
+                    setattr(acc, k, v)
+                break
 
         return user

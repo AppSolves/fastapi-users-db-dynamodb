@@ -1,89 +1,73 @@
 import random as rd
 from collections.abc import AsyncGenerator
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import aioboto3
 import pytest
 import pytest_asyncio
-from moto import mock_aws
-from pydantic import BaseModel, ConfigDict, Field
+from aiopynamodb.attributes import UnicodeAttribute
+from aiopynamodb.models import Model
 
 from fastapi_users_db_dynamodb import (
     UUID_ID,
     DynamoDBBaseOAuthAccountTableUUID,
     DynamoDBBaseUserTableUUID,
     DynamoDBUserDatabase,
+    config,
 )
-from fastapi_users_db_dynamodb._aioboto3_patch import *  # noqa: F403
-from tests.conftest import DATABASE_REGION, DATABASE_USERTABLE_PRIMARY_KEY
-from tests.tables import ensure_table_exists
 
 
-class Base(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True, from_attributes=True)
+class Base(Model):
+    pass
 
 
 class User(DynamoDBBaseUserTableUUID, Base):
-    first_name: str | None = Field(default=None, description="First name of the user")
+    __tablename__: str = config.get("DATABASE_USERTABLE_NAME") + "_test"
+
+    class Meta:
+        table_name: str = config.get("DATABASE_USERTABLE_NAME") + "_test"
+        region: str = config.get("DATABASE_REGION")
+        billing_mode: str = config.get("DATABASE_BILLING_MODE").value
+
+    if TYPE_CHECKING:
+        first_name: str | None = None
+    else:
+        first_name = UnicodeAttribute(null=True)
 
 
-class OAuthBase(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True, from_attributes=True)
+class OAuthBase(Model):
+    pass
 
 
-class OAuthAccount(OAuthBase, DynamoDBBaseOAuthAccountTableUUID):
+class OAuthAccount(DynamoDBBaseOAuthAccountTableUUID, OAuthBase):
     pass
 
 
 class UserOAuth(DynamoDBBaseUserTableUUID, OAuthBase):
-    first_name: str | None = Field(default=None, description="First name of the user")
-    oauth_accounts: list[OAuthAccount] = Field(
-        default_factory=list, description="Linked OAuth accounts"
-    )
+    __tablename__: str = config.get("DATABASE_OAUTHTABLE_NAME") + "_test"
+
+    class Meta:
+        table_name: str = config.get("DATABASE_OAUTHTABLE_NAME") + "_test"
+        region: str = config.get("DATABASE_REGION")
+        billing_mode: str = config.get("DATABASE_BILLING_MODE").value
+
+    if TYPE_CHECKING:
+        first_name: str | None = None
+    else:
+        first_name = UnicodeAttribute(null=True)
+
+    oauth_accounts: list[OAuthAccount] = []
 
 
 @pytest_asyncio.fixture
 async def dynamodb_user_db() -> AsyncGenerator[DynamoDBUserDatabase, None]:
-    with mock_aws():
-        session = aioboto3.Session()
-        table_name = "users_test"
-        await ensure_table_exists(
-            session, table_name, DATABASE_USERTABLE_PRIMARY_KEY, DATABASE_REGION
-        )
-
-        db = DynamoDBUserDatabase(
-            session,
-            User,
-            table_name,
-            DATABASE_USERTABLE_PRIMARY_KEY,
-            dynamodb_resource_region=DATABASE_REGION,
-        )
-        yield db
+    db = DynamoDBUserDatabase(User)
+    yield db
 
 
 @pytest_asyncio.fixture
 async def dynamodb_user_db_oauth() -> AsyncGenerator[DynamoDBUserDatabase, None]:
-    with mock_aws():
-        session = aioboto3.Session()
-        user_table_name = "users_test_oauth"
-        oauth_table_name = "oauth_accounts_test"
-        await ensure_table_exists(
-            session, user_table_name, DATABASE_USERTABLE_PRIMARY_KEY, DATABASE_REGION
-        )
-        await ensure_table_exists(
-            session, oauth_table_name, DATABASE_USERTABLE_PRIMARY_KEY, DATABASE_REGION
-        )
-
-        db = DynamoDBUserDatabase(
-            session,
-            UserOAuth,
-            user_table_name,
-            DATABASE_USERTABLE_PRIMARY_KEY,
-            OAuthAccount,  # type: ignore
-            oauth_table_name,
-            dynamodb_resource_region=DATABASE_REGION,
-        )
-        yield db
+    db = DynamoDBUserDatabase(UserOAuth, OAuthAccount)
+    yield db
 
 
 @pytest.mark.asyncio
@@ -100,6 +84,14 @@ async def test_queries(dynamodb_user_db: DynamoDBUserDatabase[User, UUID_ID]):
     # Update user
     updated_user = await dynamodb_user_db.update(user, {"is_superuser": True})
     assert updated_user.is_superuser is True
+    with pytest.raises(
+        ValueError,
+        match="User account could not be updated because it does not exist.",
+    ):
+        fake_user = User()
+        fake_user.email = "blabla@gmail.com"
+        fake_user.hashed_password = "crypticpassword"
+        await dynamodb_user_db.update(fake_user, {"is_superuser": True})
 
     # Get by id
     id_user = await dynamodb_user_db.get(user.id)
@@ -123,6 +115,8 @@ async def test_queries(dynamodb_user_db: DynamoDBUserDatabase[User, UUID_ID]):
 
     # Delete user
     await dynamodb_user_db.delete(user)
+    with pytest.raises(ValueError, match="User account could not be deleted"):
+        await dynamodb_user_db.delete(user)
     deleted_user = await dynamodb_user_db.get(user.id)
     assert deleted_user is None
 
@@ -131,7 +125,7 @@ async def test_queries(dynamodb_user_db: DynamoDBUserDatabase[User, UUID_ID]):
         await dynamodb_user_db.get_by_oauth_account("foo", "bar")
     with pytest.raises(NotImplementedError):
         await dynamodb_user_db.add_oauth_account(user, {})
-    with pytest.raises(ValueError):
+    with pytest.raises(NotImplementedError):
         oauth_account = OAuthAccount()  # type: ignore
         await dynamodb_user_db.update_oauth_account(user, oauth_account, {})  # type: ignore
 
@@ -144,7 +138,13 @@ async def test_insert_existing_email(
         "email": "lancelot@camelot.bt",
         "hashed_password": "guinevere",
     }
-    await dynamodb_user_db.create(user_create)
+    user = await dynamodb_user_db.create(user_create)
+    with pytest.raises(
+        ValueError,
+        match="User account could not be created because it already exists.",
+    ):
+        user_create["id"] = str(user.id)
+        await dynamodb_user_db.create(user_create)
 
     with pytest.raises(ValueError):  # oder eigene Exception
         existing = await dynamodb_user_db.get_by_email(user_create["email"])
@@ -176,6 +176,7 @@ async def test_queries_oauth(
     dynamodb_user_db_oauth: DynamoDBUserDatabase[UserOAuth, UUID_ID],
     oauth_account1: dict[str, Any],
     oauth_account2: dict[str, Any],
+    user_id: UUID_ID,
 ):
     # Test OAuth accounts
     user_create = {"email": "lancelot@camelot.bt", "hashed_password": "guinevere"}
@@ -205,13 +206,13 @@ async def test_queries_oauth(
     )
     assert _get_account(user).access_token == "NEW_TOKEN"  # type: ignore
 
-    #! IMPORTANT: Since DynamoDB uses eventual consistency, we need a small delay (e.g. `time.sleep(0.01)`) \
+    #! NOTE: Since DynamoDB uses eventual consistency, we need a small delay (e.g. `time.sleep(0.01)`) \
     #! to ensure the user was fully updated. In production, this should be negligible. \
-    #! Alternatively, the `get` and `update` methods of the `DynamoDBDatabase` class allow users \
+    #! Alternatively, most methods of the `DynamoDBDatabase` class (e.g. `get`, `update`, ...) allow users \
     #! to enable consistent reads via the `instant_update` argument.
 
     # Get by id
-    id_user = await dynamodb_user_db_oauth.get(user.id, instant_update=True)
+    id_user = await dynamodb_user_db_oauth.get(user.id)
     assert id_user is not None
     assert id_user.id == user.id
     assert _get_account(id_user).access_token == "NEW_TOKEN"  # type: ignore
@@ -232,3 +233,19 @@ async def test_queries_oauth(
     # Unknown OAuth account
     unknown_oauth_user = await dynamodb_user_db_oauth.get_by_oauth_account("foo", "bar")
     assert unknown_oauth_user is None
+
+    with pytest.raises(
+        ValueError,
+        match="OAuth account could not be updated because it does not exist.",
+    ):
+        user = UserOAuth()
+        oauth_account = OAuthAccount()
+        oauth_account.user_id = user_id
+        oauth_account.oauth_name = "blabla_provider"
+        oauth_account.account_id = "blabla_id"
+        oauth_account.account_email = "blabla@gmail.com"
+        await dynamodb_user_db_oauth.update_oauth_account(
+            user,
+            oauth_account,
+            {"access_token": "NEW_TOKEN"},
+        )

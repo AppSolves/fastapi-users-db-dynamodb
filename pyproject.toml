@@ -24,12 +24,12 @@ allow-direct-references = true
 [tool.hatch.version]
 source = "regex_commit"
 commit_extra_args = ["-e"]
-path = "fastapi_users_db_dynamodb/__init__.py"
+path = "fastapi_users_db_dynamodb/config.py"
 
 [tool.hatch.envs.default]
 installer = "uv"
 dependencies = [
-    "aioboto3",
+    "aiopynamodb@git+https://github.com/AppSolves/AioPynamoDB@master#egg=aiopynamodb>=1.0.1",
     "pytest",
     "pytest-asyncio",
     "black",
@@ -41,7 +41,6 @@ dependencies = [
     "asgi_lifespan",
     "ruff",
     "moto[all]",
-    "types-aioboto3",
     "types-aiobotocore",
 ]
 
@@ -73,9 +72,10 @@ authors = [
 ]
 description = "FastAPI Users database adapter for AWS DynamoDB"
 readme = "README.md"
+license = "Apache-2.0"
+license-files = [ "LICENSE" ]
 dynamic = ["version"]
 classifiers = [
-    "License :: OSI Approved :: Apache 2.0 License",
     "Development Status :: 5 - Production/Stable",
     "Framework :: FastAPI",
     "Framework :: AsyncIO",
@@ -91,7 +91,7 @@ classifiers = [
 requires-python = ">=3.9"
 dependencies = [
     "fastapi-users >= 14.0.0",
-    "aioboto3 >= 15.0.0",
+    "aiopynamodb@git+https://github.com/AppSolves/AioPynamoDB@master#egg=aiopynamodb>=1.0.1",
 ]
 
 [project.urls]

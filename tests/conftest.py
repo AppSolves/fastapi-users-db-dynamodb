@@ -3,10 +3,8 @@ from typing import Any, Optional
 
 import pytest
 from fastapi_users import schemas
-
-DATABASE_REGION: str = "eu-central-1"
-DATABASE_TOKENTABLE_PRIMARY_KEY: str = "token"
-DATABASE_USERTABLE_PRIMARY_KEY: str = "id"
+from moto import mock_aws
+from pydantic import UUID4
 
 
 class User(schemas.BaseUser):
@@ -23,6 +21,18 @@ class UserUpdate(schemas.BaseUserUpdate):
 
 class UserOAuth(User, schemas.BaseOAuthAccountMixin):
     pass
+
+
+@pytest.fixture(scope="session", autouse=True)
+def global_moto_mock():
+    """
+    Start Moto DynamoDB mock before any test runs,
+    and stop it after all tests are done.
+    """
+    m = mock_aws()
+    m.start()
+    yield
+    m.stop()
 
 
 @pytest.fixture
@@ -48,5 +58,5 @@ def oauth_account2() -> dict[str, Any]:
 
 
 @pytest.fixture
-def user_id() -> uuid.UUID:
+def user_id() -> UUID4:
     return uuid.uuid4()
