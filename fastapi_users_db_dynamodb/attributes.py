@@ -8,14 +8,23 @@ from ._generics import UUID_ID
 
 class GUID(Attribute[UUID_ID]):
     """
-    Custom PynamoDB attribute to store UUIDs as strings.
-    Ensures value is always a UUID object in Python.
+    Custom PynamoDB `Attribute` to store `UUID`s as strings. \
+    
+    Ensures value is always a `UUID` object in Python.
     """
 
     attr_type = STRING
     python_type = UUID_ID
 
     def serialize(self, value):
+        """Serialize a value for later storage in DynamoDB.
+
+        Args:
+            value (UUID_ID): The `UUID` to be serialized.
+
+        Returns:
+            str: The serialized `UUID` as a string.
+        """
         if value is None:
             return None
         if isinstance(value, UUID_ID):
@@ -23,6 +32,14 @@ class GUID(Attribute[UUID_ID]):
         return str(UUID_ID(value))
 
     def deserialize(self, value):
+        """Deserialize a value from DynamoDB and convert it back into a python object.
+
+        Args:
+            value (str): The serialized string representation of the `UUID`.
+
+        Returns:
+            UUID_ID: The deserialized `UUID` python object.
+        """
         if value is None:
             return None
         if not isinstance(value, UUID_ID):
@@ -38,19 +55,36 @@ class TransformingUnicodeAttribute(UnicodeAttribute):
     """
 
     def __init__(self, transform: Callable[[str], str] | None = None, **kwargs):
-        """
-        :param transform: A callable to transform the string (e.g., str.lower, str.upper)
-        :param kwargs: Other UnicodeAttribute kwargs
+        """Initialize the `Attribute` class.
+
+        Args:
+            transform (Callable[[str], str] | None, optional): A callable to transform the string (e.g., `str.lower`, `str.upper`). Defaults to None.
         """
         super().__init__(**kwargs)
         self.transform = transform
 
     def serialize(self, value):
+        """Serialize a value for later storage in DynamoDB.
+
+        Args:
+            value (str): The string to be transformed and serialized.
+
+        Returns:
+            str: The transformed and serialized object.
+        """
         if value is not None and self.transform:
             value = self.transform(value)
         return super().serialize(value)
 
     def deserialize(self, value):
+        """Deserialize a value from DynamoDB and convert it back into a python object.
+
+        Args:
+            value (str): The serialized string representation of the object.
+
+        Returns:
+            str: The deserialized python object.
+        """
         value = super().deserialize(value)
         if value is not None and self.transform:
             value = self.transform(value)
