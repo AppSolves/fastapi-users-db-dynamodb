@@ -22,6 +22,7 @@ class Base(Model):
     Args:
         Model (_type_): The PynamoDB base class definition.
     """
+
     pass
 
 
@@ -32,6 +33,7 @@ class User(DynamoDBBaseUserTableUUID, Base):
         DynamoDBBaseUserTableUUID (_type_): The underlying table object.
         Base (_type_): The PynamoDB base class definition.
     """
+
     __tablename__: str = config.get("DATABASE_USERTABLE_NAME") + "_test"
 
     class Meta:
@@ -43,6 +45,7 @@ class User(DynamoDBBaseUserTableUUID, Base):
             billing_mode (str): The billing mode to use when creating the table. \
             Currently only supports `PAY_PER_REQUEST`.
         """
+
         table_name: str = config.get("DATABASE_USERTABLE_NAME") + "_test"
         region: str = config.get("DATABASE_REGION")
         billing_mode: str = config.get("DATABASE_BILLING_MODE").value
@@ -59,6 +62,7 @@ class OAuthBase(Model):
     Args:
         Model (_type_): The PynamoDB base class definition.
     """
+
     pass
 
 
@@ -69,6 +73,7 @@ class OAuthAccount(DynamoDBBaseOAuthAccountTableUUID, OAuthBase):
         DynamoDBBaseOAuthAccountTableUUID (_type_): The underlying table object.
         OAuthBase (_type_): The base class for `OAuth`.
     """
+
     pass
 
 
@@ -79,6 +84,7 @@ class UserOAuth(DynamoDBBaseUserTableUUID, OAuthBase):
         DynamoDBBaseUserTableUUID (_type_): The underlying table object.
         OAuthBase (_type_): The base class representing `OAuth` related models.
     """
+
     __tablename__: str = config.get("DATABASE_OAUTHTABLE_NAME") + "_test"
 
     class Meta:
@@ -90,6 +96,7 @@ class UserOAuth(DynamoDBBaseUserTableUUID, OAuthBase):
             billing_mode (str): The billing mode to use when creating the table. \
             Currently only supports `PAY_PER_REQUEST`.
         """
+
         table_name: str = config.get("DATABASE_OAUTHTABLE_NAME") + "_test"
         region: str = config.get("DATABASE_REGION")
         billing_mode: str = config.get("DATABASE_BILLING_MODE").value

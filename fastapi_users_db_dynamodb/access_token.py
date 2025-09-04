@@ -22,12 +22,29 @@ class DynamoDBBaseAccessTokenTable(Model, Generic[ID]):
     __tablename__: str = config.get("DATABASE_TOKENTABLE_NAME")
 
     class Meta:
+        """The required `Meta` definitions for PynamoDB.
+
+        Args:
+            table_name (str): The name of the table.
+            region (str): The AWS region string where the table should be created.
+            billing_mode (str): The billing mode to use when creating the table. \
+            Currently only supports `PAY_PER_REQUEST`.
+        """
+
         table_name: str = config.get("DATABASE_TOKENTABLE_NAME")
         region: str = config.get("DATABASE_REGION")
         billing_mode: str = config.get("DATABASE_BILLING_MODE").value
 
     class CreatedAtIndex(GlobalSecondaryIndex):
+        """Enable the `created_at` attribute to be a Global Secondary Index.
+
+        Args:
+            GlobalSecondaryIndex (_type_): The Global Secondary Index base class.
+        """
+
         class Meta:
+            """The metadata for the Global Secondary Index."""
+
             index_name: str = "created_at-index"
             projection = AllProjection()
 
@@ -46,6 +63,12 @@ class DynamoDBBaseAccessTokenTable(Model, Generic[ID]):
 
 
 class DynamoDBBaseAccessTokenTableUUID(DynamoDBBaseAccessTokenTable[UUID_ID]):
+    """A base class representing `AccessToken` objects with unique IDs.
+
+    Args:
+        DynamoDBBaseAccessTokenTable (_type_): The underlying table object.
+    """
+
     if TYPE_CHECKING:  # pragma: no cover
         user_id: UUID_ID
     else:
@@ -53,11 +76,16 @@ class DynamoDBBaseAccessTokenTableUUID(DynamoDBBaseAccessTokenTable[UUID_ID]):
 
 
 class DynamoDBAccessTokenDatabase(Generic[AP], AccessTokenDatabase[AP]):
-    """Access token database adapter for AWS DynamoDB using aiopynamodb."""
+    """Access token database adapter for AWS DynamoDB using `aiopynamodb`."""
 
     access_token_table: type[AP]
 
     def __init__(self, access_token_table: type[AP]):
+        """Initialize the Database adapter.
+
+        Args:
+            access_token_table (type[AP]): The table for storing access tokens.
+        """
         self.access_token_table = access_token_table
 
     async def get_by_token(
@@ -66,7 +94,16 @@ class DynamoDBAccessTokenDatabase(Generic[AP], AccessTokenDatabase[AP]):
         max_age: datetime | None = None,
         instant_update: bool = False,
     ) -> AP | None:
-        """Retrieve an access token by token string."""
+        """Retrieve an access token by it's token string.
+
+        Args:
+            token (str): The actual token string to be looked for.
+            max_age (datetime | None, optional): The maximum age of an access token. Expired ones will not be returned. Defaults to None.
+            instant_update (bool, optional): Whether to use consistent reads. Defaults to False.
+
+        Returns:
+            AP | None: The access token, if found.
+        """
         await ensure_tables_exist(self.access_token_table)  # type: ignore
 
         try:
@@ -83,7 +120,18 @@ class DynamoDBAccessTokenDatabase(Generic[AP], AccessTokenDatabase[AP]):
             return None
 
     async def create(self, create_dict: dict[str, Any] | AP) -> AP:
-        """Create a new access token and return an instance of AP."""
+        """Create a new access token.
+
+        Args:
+            create_dict (dict[str, Any] | AP): A dictionary holding the data of the access token.
+
+        Raises:
+            ValueError: If the access token could not be created for whatever reason.
+            ValueError: If the access token could not be created because the table did not exist.
+
+        Returns:
+            AP: The newly created `AccessToken` object.
+        """
         await ensure_tables_exist(self.access_token_table)  # type: ignore
 
         if isinstance(create_dict, dict):
@@ -103,7 +151,19 @@ class DynamoDBAccessTokenDatabase(Generic[AP], AccessTokenDatabase[AP]):
         return token
 
     async def update(self, access_token: AP, update_dict: dict[str, Any]) -> AP:
-        """Update an existing access token."""
+        """Update an existing access token.
+
+        Args:
+            access_token (AP): The `AccessToken` object to be deleted.
+            update_dict (dict[str, Any]): A dictionary with the changes that should be applied.
+
+        Raises:
+            ValueError: If the access token could not be updated for whatever reason.
+            ValueError: If the access token could not be updated because the table did not exist.
+
+        Returns:
+            AP: The refreshed `AccessToken` object.
+        """
         await ensure_tables_exist(self.access_token_table)  # type: ignore
 
         try:
@@ -121,7 +181,15 @@ class DynamoDBAccessTokenDatabase(Generic[AP], AccessTokenDatabase[AP]):
             ) from e
 
     async def delete(self, access_token: AP) -> None:
-        """Delete an access token."""
+        """Delete an access token.
+
+        Args:
+            access_token (AP): The `AccessToken` object to be deleted.
+
+        Raises:
+            ValueError: If the access token could not be deleted for whatever reason.
+            ValueError: If the access token could not be deleted because the table did not exist.
+        """
         await ensure_tables_exist(self.access_token_table)  # type: ignore
 
         try:

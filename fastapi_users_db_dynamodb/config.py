@@ -16,6 +16,7 @@ class BillingMode(StrEnum):
     Returns:
         _type_: The enum member, representing the billing mode.
     """
+
     PAY_PER_REQUEST = "PAY_PER_REQUEST"
     # PROVISIONED = "PROVISIONED"
 
@@ -34,6 +35,7 @@ class __ConfigMap(TypedDict):
     Args:
         TypedDict (_type_): The base type.
     """
+
     DATABASE_REGION: str
     # DATABASE_BILLING_MODE: BillingMode
     DATABASE_BILLING_MODE: Literal[BillingMode.PAY_PER_REQUEST]

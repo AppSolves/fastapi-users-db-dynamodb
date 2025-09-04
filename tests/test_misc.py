@@ -8,16 +8,19 @@ from fastapi_users_db_dynamodb.tables import delete_tables, ensure_tables_exist
 
 class NotAModel:
     """A class representing an invalid `Model`."""
+
     pass
 
 
 class IncompleteModel(Model):
     """A class representing an incomplete `Model`, which misses required functions."""
+
     pass
 
 
 class ValidModel(Model):
     """A class representing a valid `Model`."""
+
     class Meta:
         """The required `Meta` definitions for PynamoDB.
 
@@ -27,6 +30,7 @@ class ValidModel(Model):
             billing_mode (str): The billing mode to use when creating the table. \
             Currently only supports `PAY_PER_REQUEST`.
         """
+
         table_name: str = "valid_model_test"
         region: str = config.get("DATABASE_REGION")
         billing_mode: str = config.get("DATABASE_BILLING_MODE").value

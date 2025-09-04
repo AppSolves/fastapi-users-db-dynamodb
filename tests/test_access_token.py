@@ -24,6 +24,7 @@ class Base(Model):
     Args:
         Model (_type_): The PynamoDB base class definition.
     """
+
     pass
 
 
@@ -34,6 +35,7 @@ class AccessToken(DynamoDBBaseAccessTokenTableUUID, Base):
         DynamoDBBaseAccessTokenTableUUID (_type_): The underlying table object.
         Base (_type_): The PynamoDB base class definition.
     """
+
     __tablename__: str = config.get("DATABASE_TOKENTABLE_NAME") + "_test"
 
     class Meta:
@@ -45,6 +47,7 @@ class AccessToken(DynamoDBBaseAccessTokenTableUUID, Base):
             billing_mode (str): The billing mode to use when creating the table. \
             Currently only supports `PAY_PER_REQUEST`.
         """
+
         table_name: str = config.get("DATABASE_TOKENTABLE_NAME") + "_test"
         region: str = config.get("DATABASE_REGION")
         billing_mode: str = config.get("DATABASE_BILLING_MODE").value
@@ -57,6 +60,7 @@ class User(DynamoDBBaseUserTableUUID, Base):
         DynamoDBBaseUserTableUUID (_type_): The underlying table object.
         Base (_type_): The PynamoDB base class definition.
     """
+
     __tablename__: str = config.get("DATABASE_USERTABLE_NAME") + "_test"
 
     class Meta:
@@ -68,6 +72,7 @@ class User(DynamoDBBaseUserTableUUID, Base):
             billing_mode (str): The billing mode to use when creating the table. \
             Currently only supports `PAY_PER_REQUEST`.
         """
+
         table_name: str = config.get("DATABASE_USERTABLE_NAME") + "_test"
         region: str = config.get("DATABASE_REGION")
         billing_mode: str = config.get("DATABASE_BILLING_MODE").value
@@ -180,7 +185,7 @@ async def test_insert_existing_token(
     dynamodb_access_token_db: DynamoDBAccessTokenDatabase[AccessToken],
     user_id: UUID4,
 ):
-    """Test function that creates and saves an already existing `AccessToken`. 
+    """Test function that creates and saves an already existing `AccessToken`.
 
     Args:
         dynamodb_access_token_db (DynamoDBAccessTokenDatabase[AccessToken]): The database instance to use.

@@ -9,21 +9,25 @@ from pydantic import UUID4
 
 class User(schemas.BaseUser):
     """A base class representing an `User`."""
+
     first_name: str | None
 
 
 class UserCreate(schemas.BaseUserCreate):
     """A base class representing the creation of an `User`."""
+
     first_name: str | None
 
 
 class UserUpdate(schemas.BaseUserUpdate):
     """A base class representing the update of an `User`."""
+
     pass
 
 
 class UserOAuth(User, schemas.BaseOAuthAccountMixin):
     """A base class representing an `User` with linked `OAuth` accounts."""
+
     pass
 
 
