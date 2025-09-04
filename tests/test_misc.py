@@ -7,15 +7,26 @@ from fastapi_users_db_dynamodb.tables import delete_tables, ensure_tables_exist
 
 
 class NotAModel:
+    """A class representing an invalid `Model`."""
     pass
 
 
 class IncompleteModel(Model):
+    """A class representing an incomplete `Model`, which misses required functions."""
     pass
 
 
 class ValidModel(Model):
+    """A class representing a valid `Model`."""
     class Meta:
+        """The required `Meta` definitions for PynamoDB.
+
+        Args:
+            table_name (str): The name of the table.
+            region (str): The AWS region string where the table should be created.
+            billing_mode (str): The billing mode to use when creating the table. \
+            Currently only supports `PAY_PER_REQUEST`.
+        """
         table_name: str = "valid_model_test"
         region: str = config.get("DATABASE_REGION")
         billing_mode: str = config.get("DATABASE_BILLING_MODE").value
@@ -23,6 +34,11 @@ class ValidModel(Model):
 
 @pytest.mark.asyncio
 async def test_tables_invalid_models(monkeypatch):
+    """Test table creation on various `Model` instances.
+
+    Args:
+        monkeypatch (_type_): The `pytest` monkeypatcher which is used to modify models.
+    """
     with pytest.raises(TypeError, match="must be a subclass of Model"):
         await ensure_tables_exist(NotAModel)  # type: ignore
 
@@ -43,6 +59,11 @@ async def test_tables_invalid_models(monkeypatch):
 
 
 def test_config(monkeypatch):
+    """Test config settings and changes.
+
+    Args:
+        monkeypatch (_type_): The `pytest` monkeypatcher which is used to modify models.
+    """
     billing_mode = config.BillingMode.PAY_PER_REQUEST
     assert billing_mode.value == str(billing_mode)
 
@@ -62,6 +83,11 @@ def test_config(monkeypatch):
 
 
 def test_attributes(user_id):
+    """Test serialization and deserialization of `Attribute` instances.
+
+    Args:
+        user_id (_type_): The default user id to use for testing.
+    """
     id = GUID()
     assert id.serialize(None) is None
 

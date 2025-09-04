@@ -19,22 +19,55 @@ from fastapi_users_db_dynamodb.access_token import (
 
 
 class Base(Model):
+    """A base class representing a PynamoDB `Model`.
+
+    Args:
+        Model (_type_): The PynamoDB base class definition.
+    """
     pass
 
 
 class AccessToken(DynamoDBBaseAccessTokenTableUUID, Base):
+    """A class representing an `AccessToken` object.
+
+    Args:
+        DynamoDBBaseAccessTokenTableUUID (_type_): The underlying table object.
+        Base (_type_): The PynamoDB base class definition.
+    """
     __tablename__: str = config.get("DATABASE_TOKENTABLE_NAME") + "_test"
 
     class Meta:
+        """The required `Meta` definitions for PynamoDB.
+
+        Args:
+            table_name (str): The name of the table.
+            region (str): The AWS region string where the table should be created.
+            billing_mode (str): The billing mode to use when creating the table. \
+            Currently only supports `PAY_PER_REQUEST`.
+        """
         table_name: str = config.get("DATABASE_TOKENTABLE_NAME") + "_test"
         region: str = config.get("DATABASE_REGION")
         billing_mode: str = config.get("DATABASE_BILLING_MODE").value
 
 
 class User(DynamoDBBaseUserTableUUID, Base):
+    """A class representing a `User` obejct.
+
+    Args:
+        DynamoDBBaseUserTableUUID (_type_): The underlying table object.
+        Base (_type_): The PynamoDB base class definition.
+    """
     __tablename__: str = config.get("DATABASE_USERTABLE_NAME") + "_test"
 
     class Meta:
+        """The required `Meta` definitions for PynamoDB.
+
+        Args:
+            table_name (str): The name of the table.
+            region (str): The AWS region string where the table should be created.
+            billing_mode (str): The billing mode to use when creating the table. \
+            Currently only supports `PAY_PER_REQUEST`.
+        """
         table_name: str = config.get("DATABASE_USERTABLE_NAME") + "_test"
         region: str = config.get("DATABASE_REGION")
         billing_mode: str = config.get("DATABASE_BILLING_MODE").value
@@ -44,6 +77,17 @@ class User(DynamoDBBaseUserTableUUID, Base):
 async def dynamodb_access_token_db(
     user_id: UUID4,
 ) -> AsyncGenerator[DynamoDBAccessTokenDatabase[AccessToken]]:
+    """Create a new `AccessToken` Database and yield it to other tests.
+
+    Args:
+        user_id (UUID4): The user id for the default user.
+
+    Returns:
+        AsyncGenerator[DynamoDBAccessTokenDatabase[AccessToken]]: The `AccessToken` Database instance.
+
+    Yields:
+        Iterator[AsyncGenerator[DynamoDBAccessTokenDatabase[AccessToken]]]: The `AccessToken` Database instance.
+    """
     user_db = DynamoDBUserDatabase(User)
     user = await user_db.create(
         User(
@@ -65,6 +109,12 @@ async def test_queries(
     dynamodb_access_token_db: DynamoDBAccessTokenDatabase[AccessToken],
     user_id: UUID4,
 ):
+    """Test default queries to the `AccessToken` Database.
+
+    Args:
+        dynamodb_access_token_db (DynamoDBAccessTokenDatabase[AccessToken]): The database instance to use.
+        user_id (UUID4): The default user id to use.
+    """
     access_token_create = {"token": "TOKEN", "user_id": user_id}
 
     # Create
@@ -130,6 +180,12 @@ async def test_insert_existing_token(
     dynamodb_access_token_db: DynamoDBAccessTokenDatabase[AccessToken],
     user_id: UUID4,
 ):
+    """Test function that creates and saves an already existing `AccessToken`. 
+
+    Args:
+        dynamodb_access_token_db (DynamoDBAccessTokenDatabase[AccessToken]): The database instance to use.
+        user_id (UUID4): The default user id to use.
+    """
     access_token_create = {"token": "TOKEN", "user_id": user_id}
 
     token = await dynamodb_access_token_db.get_by_token(access_token_create["token"])

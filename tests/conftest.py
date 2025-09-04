@@ -8,18 +8,22 @@ from pydantic import UUID4
 
 
 class User(schemas.BaseUser):
+    """A base class representing an `User`."""
     first_name: str | None
 
 
 class UserCreate(schemas.BaseUserCreate):
+    """A base class representing the creation of an `User`."""
     first_name: str | None
 
 
 class UserUpdate(schemas.BaseUserUpdate):
+    """A base class representing the update of an `User`."""
     pass
 
 
 class UserOAuth(User, schemas.BaseOAuthAccountMixin):
+    """A base class representing an `User` with linked `OAuth` accounts."""
     pass
 
 
@@ -37,6 +41,11 @@ def global_moto_mock():
 
 @pytest.fixture
 def oauth_account1() -> dict[str, Any]:
+    """Return a fake `OAuth` account for testing.
+
+    Returns:
+        dict[str, Any]: A `dict` object representing the `OAuth` account.
+    """
     return {
         "oauth_name": "service1",
         "access_token": "TOKEN",
@@ -48,6 +57,11 @@ def oauth_account1() -> dict[str, Any]:
 
 @pytest.fixture
 def oauth_account2() -> dict[str, Any]:
+    """Return a fake `OAuth` account for testing.
+
+    Returns:
+        dict[str, Any]: A `dict` object representing the `OAuth` account.
+    """
     return {
         "oauth_name": "service2",
         "access_token": "TOKEN",
@@ -59,4 +73,9 @@ def oauth_account2() -> dict[str, Any]:
 
 @pytest.fixture
 def user_id() -> UUID4:
+    """Return a randomly generated UUIDv4.
+
+    Returns:
+        UUID4: The random UUIDv4 user id.
+    """
     return uuid.uuid4()
