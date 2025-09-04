@@ -76,7 +76,11 @@ class DynamoDBBaseAccessTokenTableUUID(DynamoDBBaseAccessTokenTable[UUID_ID]):
 
 
 class DynamoDBAccessTokenDatabase(Generic[AP], AccessTokenDatabase[AP]):
-    """Access token database adapter for AWS DynamoDB using `aiopynamodb`."""
+    """
+    Access token database adapter for AWS DynamoDB using `aiopynamodb`. \
+    
+    Stores `AccessToken`s.
+    """
 
     access_token_table: type[AP]
 
@@ -84,7 +88,7 @@ class DynamoDBAccessTokenDatabase(Generic[AP], AccessTokenDatabase[AP]):
         """Initialize the Database adapter.
 
         Args:
-            access_token_table (type[AP]): The table for storing access tokens.
+            access_token_table (type[AP]): The underlying table for storing `AccessToken`s.
         """
         self.access_token_table = access_token_table
 
@@ -154,7 +158,7 @@ class DynamoDBAccessTokenDatabase(Generic[AP], AccessTokenDatabase[AP]):
         """Update an existing access token.
 
         Args:
-            access_token (AP): The `AccessToken` object to be deleted.
+            access_token (AP): The `AccessToken` object to be updated.
             update_dict (dict[str, Any]): A dictionary with the changes that should be applied.
 
         Raises:

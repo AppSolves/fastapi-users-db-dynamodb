@@ -34,12 +34,29 @@ class DynamoDBBaseUserTable(Model, Generic[ID]):
     __tablename__: str = config.get("DATABASE_USERTABLE_NAME")
 
     class Meta:
+        """The required `Meta` definitions for PynamoDB.
+
+        Args:
+            table_name (str): The name of the table.
+            region (str): The AWS region string where the table should be created.
+            billing_mode (str): The billing mode to use when creating the table. \
+            Currently only supports `PAY_PER_REQUEST`.
+        """
+
         table_name: str = config.get("DATABASE_USERTABLE_NAME")
         region: str = config.get("DATABASE_REGION")
         billing_mode: str = config.get("DATABASE_BILLING_MODE").value
 
     class EmailIndex(GlobalSecondaryIndex):
+        """Enable the `email` attribute to be a Global Secondary Index.
+
+        Args:
+            GlobalSecondaryIndex (_type_): The Global Secondary Index base class.
+        """
+
         class Meta:
+            """The metadata for the Global Secondary Index."""
+
             index_name: str = "email-index"
             projection = AllProjection()
 
@@ -64,6 +81,12 @@ class DynamoDBBaseUserTable(Model, Generic[ID]):
 
 
 class DynamoDBBaseUserTableUUID(DynamoDBBaseUserTable[UUID_ID]):
+    """A base class representing `User` objects with unique IDs.
+
+    Args:
+        DynamoDBBaseUserTable (_type_): The underlying table object.
+    """
+
     if TYPE_CHECKING:  # pragma: no cover
         id: UUID_ID
     else:
@@ -76,26 +99,59 @@ class DynamoDBBaseOAuthAccountTable(Model, Generic[ID]):
     __tablename__: str = config.get("DATABASE_OAUTHTABLE_NAME")
 
     class Meta:
+        """The required `Meta` definitions for PynamoDB.
+
+        Args:
+            table_name (str): The name of the table.
+            region (str): The AWS region string where the table should be created.
+            billing_mode (str): The billing mode to use when creating the table. \
+            Currently only supports `PAY_PER_REQUEST`.
+        """
+
         table_name: str = config.get("DATABASE_OAUTHTABLE_NAME")
         region: str = config.get("DATABASE_REGION")
         billing_mode: str = config.get("DATABASE_BILLING_MODE").value
 
     class AccountIdIndex(GlobalSecondaryIndex):
+        """Enable the `account_id` attribute to be a Global Secondary Index.
+
+        Args:
+            GlobalSecondaryIndex (_type_): The Global Secondary Index base class.
+        """
+
         class Meta:
+            """The metadata for the Global Secondary Index."""
+
             index_name: str = "account_id-index"
             projection = AllProjection()
 
         account_id = UnicodeAttribute(hash_key=True)
 
     class OAuthNameIndex(GlobalSecondaryIndex):
+        """Enable the `oauth_name` attribute to be a Global Secondary Index.
+
+        Args:
+            GlobalSecondaryIndex (_type_): The Global Secondary Index base class.
+        """
+
         class Meta:
+            """The metadata for the Global Secondary Index."""
+
             index_name: str = "oauth_name-index"
             projection = AllProjection()
 
         oauth_name = UnicodeAttribute(hash_key=True)
 
     class UserIdIndex(GlobalSecondaryIndex):
+        """Enable the `user_id` attribute to be a Global Secondary Index.
+
+        Args:
+            GlobalSecondaryIndex (_type_): The Global Secondary Index base class.
+        """
+
         class Meta:
+            """The metadata for the Global Secondary Index."""
+
             index_name = "user_id-index"
             projection = AllProjection()
 
@@ -124,6 +180,12 @@ class DynamoDBBaseOAuthAccountTable(Model, Generic[ID]):
 
 
 class DynamoDBBaseOAuthAccountTableUUID(DynamoDBBaseOAuthAccountTable[UUID_ID]):
+    """A base class representing `OAuthAccount` objects with unique IDs.
+
+    Args:
+        DynamoDBBaseOAuthAccountTable (_type_): The underlying table object.
+    """
+
     if TYPE_CHECKING:  # pragma: no cover
         id: UUID_ID
         user_id: UUID_ID
@@ -134,7 +196,9 @@ class DynamoDBBaseOAuthAccountTableUUID(DynamoDBBaseOAuthAccountTable[UUID_ID]):
 
 class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
     """
-    Database adapter for AWS DynamoDB using aiopynamodb.
+    Database adapter for AWS DynamoDB using `aiopynamodb`. \
+    
+    Stores `User` and `OAuth` accounts.
     """
 
     user_table: type[UP]
@@ -145,6 +209,12 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
         user_table: type[UP],
         oauth_account_table: type[DynamoDBBaseOAuthAccountTable] | None = None,
     ):
+        """Initialize the database adapter.
+
+        Args:
+            user_table (type[UP]): The underlying table for storing `User` accounts.
+            oauth_account_table (type[DynamoDBBaseOAuthAccountTable] | None, optional): The underlying table for storing `OAuth` accounts. Defaults to None.
+        """
         self.user_table = user_table
         self.oauth_account_table = oauth_account_table
 
@@ -153,9 +223,16 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
         user: UP,
         instant_update: bool = False,
     ) -> UP:
-        """
-        Populate the `oauth_accounts` list of a user by querying the OAuth table.
-        This mimics SQLAlchemy's lazy relationship loading.
+        """Populate the `oauth_accounts` list of a user by querying the `OAuth` table. \
+        
+        This mimics *SQLAlchemy*'s lazy relationship loading.
+
+        Args:
+            user (UP): The `User` object that should be refreshed.
+            instant_update (bool, optional): Whether to use consistent reads. Defaults to False.
+
+        Returns:
+            UP: The refreshed user.
         """
         if self.oauth_account_table is None:
             return user
@@ -172,7 +249,15 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
         return user
 
     async def get(self, id: ID, instant_update: bool = False) -> UP | None:
-        """Get a user by id and hydrate oauth_accounts if available."""
+        """Get a user by id and hydrate `oauth_accounts` if available.
+
+        Args:
+            id (ID): The id of the user account.
+            instant_update (bool, optional): Whether to use consistent reads. Defaults to False.
+
+        Returns:
+            UP | None: The `User` object, if found.
+        """
         await ensure_tables_exist(self.user_table)  # type: ignore
 
         try:
@@ -183,7 +268,15 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
             return None
 
     async def get_by_email(self, email: str, instant_update: bool = False) -> UP | None:
-        """Get a user by email using the email GSI (case-insensitive)."""
+        """Get a user by email using the email **Global Secondary Index** (case-insensitive).
+
+        Args:
+            email (str): The email of the user account.
+            instant_update (bool, optional): Whether to use consistent reads. Defaults to False.
+
+        Returns:
+            UP | None: The `User` object, if found.
+        """
         await ensure_tables_exist(self.user_table)  # type: ignore
 
         email_lower = email.lower()
@@ -202,7 +295,19 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
         account_id: str,
         instant_update: bool = False,
     ) -> UP | None:
-        """Find a user by oauth provider and account_id."""
+        """Find a user by oauth provider and `account_id`.
+
+        Args:
+            oauth (str): The name of the `OAuth` provider.
+            account_id (str): The id of the `OAuth` account.
+            instant_update (bool, optional): Whether to use consistent reads. Defaults to False.
+
+        Raises:
+            NotImplementedError: If the `OAuth` table was not specified upon initialization.
+
+        Returns:
+            UP | None: The `User` object, if found.
+        """
         if self.oauth_account_table is None:
             raise NotImplementedError()
         await ensure_tables_exist(self.user_table, self.oauth_account_table)  # type: ignore
@@ -225,7 +330,18 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
         return None
 
     async def create(self, create_dict: dict[str, Any] | UP) -> UP:
-        """Create a new user and return an instance of UP."""
+        """Create a new user and return an instance of UP.
+
+        Args:
+            create_dict (dict[str, Any] | UP): A dictionary holding the data of the user account.
+
+        Raises:
+            ValueError: If the user account could not be created for whatever reason.
+            ValueError: If the user account could not be created because the table did not exist.
+
+        Returns:
+            UP: The newly created `User` object.
+        """
         await ensure_tables_exist(self.user_table)  # type: ignore
 
         if isinstance(create_dict, dict):
@@ -248,7 +364,19 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
         return user
 
     async def update(self, user: UP, update_dict: dict[str, Any]) -> UP:
-        """Update a user with update_dict and return the updated UP instance."""
+        """Update a user with `update_dict` and return the updated UP instance.
+
+        Args:
+            user (UP): The `User` instance to be updated.
+            update_dict (dict[str, Any]): A dictionary with the changes that should be applied.
+
+        Raises:
+            ValueError: If the user account could not be updated for whatever reason.
+            ValueError: If the user account could not be updated because the table did not exist.
+
+        Returns:
+            UP: The refreshed `User` object.
+        """
         await ensure_tables_exist(self.user_table)  # type: ignore
 
         try:
@@ -266,7 +394,15 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
             ) from e
 
     async def delete(self, user: UP) -> None:
-        """Delete a user."""
+        """Delete a user.
+
+        Args:
+            user (UP): The `User` object to be deleted.
+
+        Raises:
+            ValueError: If the user account could not be deleted for whatever reason.
+            ValueError: If the user account could not be deleted because the table did not exist.
+        """
         await ensure_tables_exist(self.user_table)  # type: ignore
 
         try:
@@ -280,7 +416,20 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
                 ) from e
 
     async def add_oauth_account(self, user: UP, create_dict: dict[str, Any]) -> UP:
-        """Add an OAuth account and return the refreshed user (UP)."""
+        """Add an `OAuth` account and return the refreshed user (UP).
+
+        Args:
+            user (UP): The `User` object, which the newly created `OAuth` account should be linked to.
+            create_dict (dict[str, Any]): A dictionary holding the data of the `OAuth` account.
+
+        Raises:
+            NotImplementedError: If the `OAuth` table was not specified upon initialization.
+            ValueError: If the `OAuth` account could not be created for whatever reason.
+            ValueError: If the `OAuth` account could not be created because the table did not exist.
+
+        Returns:
+            UP: The refreshed `User` object.
+        """
         if self.oauth_account_table is None:
             raise NotImplementedError()
         await ensure_tables_exist(self.user_table, self.oauth_account_table)  # type: ignore
@@ -310,7 +459,21 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
         oauth_account: OAP,  # type: ignore
         update_dict: dict[str, Any],
     ) -> UP:
-        """Update an OAuth account and return the refreshed user (UP)."""
+        """Update an OAuth account and return the refreshed user (UP).
+
+        Args:
+            user (UP): The `User` object, which the updated `OAuth` account should be linked to.
+            oauth_account (OAP): The existing `OAuth` account to be updated.
+            update_dict (dict[str, Any]): A dictionary with the changes that should be applied.
+
+        Raises:
+            NotImplementedError: If the `OAuth` table was not specified upon initialization.
+            ValueError: If the `OAuth` account could not be updated for whatever reason.
+            ValueError: If the `OAuth` account could not be updated because the table did not exist.
+
+        Returns:
+            UP: The refreshed `User` object.
+        """
         if self.oauth_account_table is None:
             raise NotImplementedError()
         await ensure_tables_exist(self.user_table, self.oauth_account_table)  # type: ignore
