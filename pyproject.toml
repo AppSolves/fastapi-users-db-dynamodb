@@ -30,7 +30,7 @@ path = "fastapi_users_db_dynamodb/config.py"
 [tool.hatch.envs.default]
 installer = "uv"
 dependencies = [
-    "aiopynamodb@git+https://github.com/AppSolves/AioPynamoDB@master#egg=aiopynamodb>=1.0.1",
+    "as-aiopynamodb>=1.0.1",
     "pytest",
     "pytest-asyncio",
     "black",
@@ -90,7 +90,7 @@ classifiers = [
 requires-python = ">=3.11"
 dependencies = [
     "fastapi-users >= 14.0.0",
-    "aiopynamodb@git+https://github.com/AppSolves/AioPynamoDB@master#egg=aiopynamodb>=1.0.1",
+    "as-aiopynamodb>=1.0.1",
 ]
 
 [project.urls]
