@@ -126,6 +126,12 @@ async def test_queries(
     access_token = await dynamodb_access_token_db.create(access_token_create)
     assert access_token.token == "TOKEN"
     assert access_token.user_id == user_id
+    with pytest.raises(
+        ValueError,
+        match="AccessToken must implement and store value 'user_id'.",
+    ):
+        access_token_create.pop("user_id")
+        await dynamodb_access_token_db.create(access_token_create)
 
     # Update
     new_time = now_utc()

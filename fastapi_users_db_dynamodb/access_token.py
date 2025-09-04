@@ -161,6 +161,9 @@ class DynamoDBAccessTokenDatabase(Generic[AP], AccessTokenDatabase[AP]):
             token = self.access_token_table(**create_dict)
         else:
             token = create_dict
+        if not getattr(token, "user_id", None):
+            raise ValueError("AccessToken must implement and store value 'user_id'.")
+
         try:
             await token.save(condition=self.access_token_table.token.does_not_exist())  # type: ignore
         except PutError as e:
