@@ -69,10 +69,29 @@ class DynamoDBBaseAccessTokenTableUUID(DynamoDBBaseAccessTokenTable[UUID_ID]):
         DynamoDBBaseAccessTokenTable (_type_): The underlying table object.
     """
 
+    # OPTIONAL GSI
+    class UserIdIndex(GlobalSecondaryIndex):
+        """Enable the `user_id` attribute to be a Global Secondary Index.
+
+        Args:
+            GlobalSecondaryIndex (_type_): The Global Secondary Index base class.
+        """
+
+        class Meta:
+            """The metadata for the Global Secondary Index."""
+
+            index_name = "user_id-index"
+            projection = AllProjection()
+
+        user_id = GUID(hash_key=True)
+
     if TYPE_CHECKING:  # pragma: no cover
         user_id: UUID_ID
     else:
         user_id: GUID = GUID(null=False)
+
+    # Global Secondary Index
+    user_id_index = UserIdIndex()
 
 
 class DynamoDBAccessTokenDatabase(Generic[AP], AccessTokenDatabase[AP]):

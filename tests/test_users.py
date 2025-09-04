@@ -258,6 +258,7 @@ async def test_queries_oauth(
     oauth_account1: dict[str, Any],
     oauth_account2: dict[str, Any],
     user_id: UUID_ID,
+    monkeypatch,
 ):
     """Test `OAuth` implemenatation and basic **CRUD** operations.
 
@@ -338,3 +339,14 @@ async def test_queries_oauth(
             oauth_account,
             {"access_token": "NEW_TOKEN"},
         )
+
+    with pytest.raises(
+        ValueError,
+        match="OAuthAccount table scheme must implement a Global Secondary Index",
+    ):
+        monkeypatch.setattr(
+            dynamodb_user_db_oauth.oauth_account_table,
+            "user_id_index",
+            None,
+        )
+        await dynamodb_user_db_oauth._hydrate_oauth_accounts(oauth_user)

@@ -142,21 +142,6 @@ class DynamoDBBaseOAuthAccountTable(Model, Generic[ID]):
 
         oauth_name = UnicodeAttribute(hash_key=True)
 
-    class UserIdIndex(GlobalSecondaryIndex):
-        """Enable the `user_id` attribute to be a Global Secondary Index.
-
-        Args:
-            GlobalSecondaryIndex (_type_): The Global Secondary Index base class.
-        """
-
-        class Meta:
-            """The metadata for the Global Secondary Index."""
-
-            index_name = "user_id-index"
-            projection = AllProjection()
-
-        user_id = GUID(hash_key=True)
-
     if TYPE_CHECKING:  # pragma: no cover
         id: ID
         oauth_name: str
@@ -176,7 +161,6 @@ class DynamoDBBaseOAuthAccountTable(Model, Generic[ID]):
     # Global Secondary Index
     account_id_index = AccountIdIndex()
     oauth_name_index = OAuthNameIndex()
-    user_id_index = UserIdIndex()
 
 
 class DynamoDBBaseOAuthAccountTableUUID(DynamoDBBaseOAuthAccountTable[UUID_ID]):
@@ -186,12 +170,31 @@ class DynamoDBBaseOAuthAccountTableUUID(DynamoDBBaseOAuthAccountTable[UUID_ID]):
         DynamoDBBaseOAuthAccountTable (_type_): The underlying table object.
     """
 
+    # MANDATORY GSI (MUST BE IMPLEMENTED)
+    class UserIdIndex(GlobalSecondaryIndex):
+        """Enable the `user_id` attribute to be a Global Secondary Index.
+
+        Args:
+            GlobalSecondaryIndex (_type_): The Global Secondary Index base class.
+        """
+
+        class Meta:
+            """The metadata for the Global Secondary Index."""
+
+            index_name = "user_id-index"
+            projection = AllProjection()
+
+        user_id = GUID(hash_key=True)
+
     if TYPE_CHECKING:  # pragma: no cover
         id: UUID_ID
         user_id: UUID_ID
     else:
         id: GUID = GUID(hash_key=True, default=uuid.uuid4)
         user_id: GUID = GUID(null=False)
+
+    # Global Secondary Index
+    user_id_index = UserIdIndex()
 
 
 class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
@@ -240,6 +243,13 @@ class DynamoDBUserDatabase(Generic[UP, ID], BaseUserDatabase[UP, ID]):
 
         user.oauth_accounts = []  # type: ignore
 
+        if not hasattr(self.oauth_account_table, "user_id_index") or not isinstance(
+            self.oauth_account_table.user_id_index,  # type: ignore
+            GlobalSecondaryIndex,
+        ):
+            raise ValueError(
+                "Attribute 'user_id_index' not found: OAuthAccount table scheme must implement a Global Secondary Index for attribute 'user_id'."
+            )
         async for oauth_acc in self.oauth_account_table.user_id_index.query(  # type: ignore
             user.id,
             consistent_read=instant_update,
