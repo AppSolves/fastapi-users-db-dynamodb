@@ -1,3 +1,8 @@
+<p align="center">
+  <kbd><img src="https://raw.githubusercontent.com/AppSolves/fastapi-users-db-dynamodb/refs/heads/main/assets/github/repo_card.png?sanitize=true" alt="FastAPI Users DynamoDB Adapter"></kbd>
+</p>
+<br>
+
 # FastAPI Users - Database adapter for AWS DynamoDB
 
 <p align="center">
