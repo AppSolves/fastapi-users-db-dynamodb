@@ -22,7 +22,7 @@ from fastapi_users.db.base import BaseUserDatabase
 from fastapi_users.models import ID, OAP, UP
 
 from . import config
-from ._generics import UUID_ID
+from ._generics import UUID_ID, classproperty
 from .attributes import GUID, TransformingUnicodeAttribute
 from .config import __version__  # noqa: F401
 from .tables import ensure_tables_exist
@@ -31,7 +31,9 @@ from .tables import ensure_tables_exist
 class DynamoDBBaseUserTable(Model, Generic[ID]):
     """Base user table schema for DynamoDB."""
 
-    __tablename__: str = config.get("DATABASE_USERTABLE_NAME")
+    @classproperty
+    def __tablename__(self) -> str:
+        return config.get("DATABASE_USERTABLE_NAME")
 
     class Meta:
         """The required `Meta` definitions for PynamoDB.
@@ -43,9 +45,17 @@ class DynamoDBBaseUserTable(Model, Generic[ID]):
             Currently only supports `PAY_PER_REQUEST`.
         """
 
-        table_name: str = config.get("DATABASE_USERTABLE_NAME")
-        region: str = config.get("DATABASE_REGION")
-        billing_mode: str = config.get("DATABASE_BILLING_MODE").value
+        @classproperty
+        def table_name(self) -> str:
+            return config.get("DATABASE_USERTABLE_NAME")
+
+        @classproperty
+        def region(self) -> str:
+            return config.get("DATABASE_REGION")
+
+        @classproperty
+        def billing_mode(self) -> str:
+            return config.get("DATABASE_BILLING_MODE").value
 
     class EmailIndex(GlobalSecondaryIndex):
         """Enable the `email` attribute to be a Global Secondary Index.
@@ -96,7 +106,9 @@ class DynamoDBBaseUserTableUUID(DynamoDBBaseUserTable[UUID_ID]):
 class DynamoDBBaseOAuthAccountTable(Model, Generic[ID]):
     """Base OAuth account table schema for DynamoDB."""
 
-    __tablename__: str = config.get("DATABASE_OAUTHTABLE_NAME")
+    @classproperty
+    def __tablename__(self) -> str:
+        return config.get("DATABASE_OAUTHTABLE_NAME")
 
     class Meta:
         """The required `Meta` definitions for PynamoDB.
@@ -108,9 +120,17 @@ class DynamoDBBaseOAuthAccountTable(Model, Generic[ID]):
             Currently only supports `PAY_PER_REQUEST`.
         """
 
-        table_name: str = config.get("DATABASE_OAUTHTABLE_NAME")
-        region: str = config.get("DATABASE_REGION")
-        billing_mode: str = config.get("DATABASE_BILLING_MODE").value
+        @classproperty
+        def table_name(self) -> str:
+            return config.get("DATABASE_OAUTHTABLE_NAME")
+
+        @classproperty
+        def region(self) -> str:
+            return config.get("DATABASE_REGION")
+
+        @classproperty
+        def billing_mode(self) -> str:
+            return config.get("DATABASE_BILLING_MODE").value
 
     class AccountIdIndex(GlobalSecondaryIndex):
         """Enable the `account_id` attribute to be a Global Secondary Index.

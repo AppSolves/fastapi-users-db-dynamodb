@@ -11,7 +11,7 @@ from fastapi_users.authentication.strategy.db import AP, AccessTokenDatabase
 from fastapi_users.models import ID
 
 from . import config
-from ._generics import UUID_ID, now_utc
+from ._generics import UUID_ID, classproperty, now_utc
 from .attributes import GUID
 from .tables import ensure_tables_exist
 
@@ -19,7 +19,9 @@ from .tables import ensure_tables_exist
 class DynamoDBBaseAccessTokenTable(Model, Generic[ID]):
     """Base access token table schema for DynamoDB."""
 
-    __tablename__: str = config.get("DATABASE_TOKENTABLE_NAME")
+    @classproperty
+    def __tablename__(self) -> str:
+        return config.get("DATABASE_TOKENTABLE_NAME")
 
     class Meta:
         """The required `Meta` definitions for PynamoDB.
@@ -31,9 +33,17 @@ class DynamoDBBaseAccessTokenTable(Model, Generic[ID]):
             Currently only supports `PAY_PER_REQUEST`.
         """
 
-        table_name: str = config.get("DATABASE_TOKENTABLE_NAME")
-        region: str = config.get("DATABASE_REGION")
-        billing_mode: str = config.get("DATABASE_BILLING_MODE").value
+        @classproperty
+        def table_name(self) -> str:
+            return config.get("DATABASE_TOKENTABLE_NAME")
+
+        @classproperty
+        def region(self) -> str:
+            return config.get("DATABASE_REGION")
+
+        @classproperty
+        def billing_mode(self) -> str:
+            return config.get("DATABASE_BILLING_MODE").value
 
     class CreatedAtIndex(GlobalSecondaryIndex):
         """Enable the `created_at` attribute to be a Global Secondary Index.

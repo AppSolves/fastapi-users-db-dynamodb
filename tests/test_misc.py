@@ -2,6 +2,7 @@ import pytest
 from aiopynamodb.models import Model
 
 from fastapi_users_db_dynamodb import config
+from fastapi_users_db_dynamodb._generics import classproperty
 from fastapi_users_db_dynamodb.attributes import GUID
 from fastapi_users_db_dynamodb.tables import delete_tables, ensure_tables_exist
 
@@ -31,9 +32,17 @@ class ValidModel(Model):
             Currently only supports `PAY_PER_REQUEST`.
         """
 
-        table_name: str = "valid_model_test"
-        region: str = config.get("DATABASE_REGION")
-        billing_mode: str = config.get("DATABASE_BILLING_MODE").value
+        @classproperty
+        def table_name(self) -> str:
+            return "valid_model_test"
+
+        @classproperty
+        def region(self) -> str:
+            return config.get("DATABASE_REGION")
+
+        @classproperty
+        def billing_mode(self) -> str:
+            return config.get("DATABASE_BILLING_MODE").value
 
 
 @pytest.mark.asyncio

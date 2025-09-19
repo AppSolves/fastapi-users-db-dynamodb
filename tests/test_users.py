@@ -12,6 +12,7 @@ from fastapi_users_db_dynamodb import (
     DynamoDBBaseOAuthAccountTableUUID,
     DynamoDBBaseUserTableUUID,
     DynamoDBUserDatabase,
+    classproperty,
     config,
 )
 
@@ -34,7 +35,9 @@ class User(DynamoDBBaseUserTableUUID, Base):
         Base (_type_): The PynamoDB base class definition.
     """
 
-    __tablename__: str = config.get("DATABASE_USERTABLE_NAME") + "_test"
+    @classproperty
+    def __tablename__(self) -> str:
+        return config.get("DATABASE_USERTABLE_NAME") + "_test"
 
     class Meta:
         """The required `Meta` definitions for PynamoDB.
@@ -46,9 +49,17 @@ class User(DynamoDBBaseUserTableUUID, Base):
             Currently only supports `PAY_PER_REQUEST`.
         """
 
-        table_name: str = config.get("DATABASE_USERTABLE_NAME") + "_test"
-        region: str = config.get("DATABASE_REGION")
-        billing_mode: str = config.get("DATABASE_BILLING_MODE").value
+        @classproperty
+        def table_name(self) -> str:
+            return config.get("DATABASE_USERTABLE_NAME") + "_test"
+
+        @classproperty
+        def region(self) -> str:
+            return config.get("DATABASE_REGION")
+
+        @classproperty
+        def billing_mode(self) -> str:
+            return config.get("DATABASE_BILLING_MODE").value
 
     if TYPE_CHECKING:
         first_name: str | None = None
@@ -85,7 +96,9 @@ class UserOAuth(DynamoDBBaseUserTableUUID, OAuthBase):
         OAuthBase (_type_): The base class representing `OAuth` related models.
     """
 
-    __tablename__: str = config.get("DATABASE_OAUTHTABLE_NAME") + "_test"
+    @classproperty
+    def __tablename__(self) -> str:
+        return config.get("DATABASE_OAUTHTABLE_NAME") + "_test"
 
     class Meta:
         """The required `Meta` definitions for PynamoDB.
@@ -97,9 +110,17 @@ class UserOAuth(DynamoDBBaseUserTableUUID, OAuthBase):
             Currently only supports `PAY_PER_REQUEST`.
         """
 
-        table_name: str = config.get("DATABASE_OAUTHTABLE_NAME") + "_test"
-        region: str = config.get("DATABASE_REGION")
-        billing_mode: str = config.get("DATABASE_BILLING_MODE").value
+        @classproperty
+        def table_name(self) -> str:
+            return config.get("DATABASE_OAUTHTABLE_NAME") + "_test"
+
+        @classproperty
+        def region(self) -> str:
+            return config.get("DATABASE_REGION")
+
+        @classproperty
+        def billing_mode(self) -> str:
+            return config.get("DATABASE_BILLING_MODE").value
 
     if TYPE_CHECKING:
         first_name: str | None = None
