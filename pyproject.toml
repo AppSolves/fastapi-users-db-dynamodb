@@ -63,7 +63,7 @@ lint-check = [
 support-legacy = true  # Create setup.py
 
 [build-system]
-requires = ["hatchling", "hatch-regex-commit"]
+requires = ["hatchling", "hatch-regex-commit", "click<8.3.0"]
 build-backend = "hatchling.build"
 
 [project]
