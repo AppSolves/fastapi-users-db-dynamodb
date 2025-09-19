@@ -6,7 +6,24 @@ from datetime import UTC, datetime
 UUID_ID = uuid.UUID
 
 
-class classproperty:
+class classproperty:  # pragma: no cover
+    """A decorator which behaves like `@property`, but for classmethods.
+    This allows to define read-only class properties.
+    Example::
+        ```python
+        class Foo:
+            @classproperty
+            def bar(cls):
+                return 42 \
+
+        Foo.bar # calls __get__ \
+
+        Foo.bar = 99 # does NOT call __set__ on classproperty, just sets Foo.bar to 99 \
+
+        del Foo.bar # does NOT call __delete__ on classproperty, just deletes Foo.bar
+        ```
+    """
+
     def __init__(self, fget=None, fset=None, fdel=None):
         self.fget = fget
         self.fset = fset

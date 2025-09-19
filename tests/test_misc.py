@@ -1,8 +1,9 @@
 import pytest
 from aiopynamodb.models import Model
 
-from fastapi_users_db_dynamodb import config
+from fastapi_users_db_dynamodb import DynamoDBBaseUserTable, config
 from fastapi_users_db_dynamodb._generics import classproperty
+from fastapi_users_db_dynamodb.access_token import DynamoDBBaseAccessTokenTable
 from fastapi_users_db_dynamodb.attributes import GUID
 from fastapi_users_db_dynamodb.tables import delete_tables, ensure_tables_exist
 
@@ -93,6 +94,24 @@ def test_config(monkeypatch):
     region = "us-east-1"
     config.set("DATABASE_REGION", region)
     assert config.get("DATABASE_REGION") == region
+
+    # Test Meta definitions
+    assert DynamoDBBaseUserTable.Meta.table_name == config.get(
+        "DATABASE_USERTABLE_NAME"
+    )
+    assert DynamoDBBaseAccessTokenTable.Meta.table_name == config.get(
+        "DATABASE_TOKENTABLE_NAME"
+    )
+    assert (
+        DynamoDBBaseUserTable.Meta.region
+        == DynamoDBBaseAccessTokenTable.Meta.region
+        == config.get("DATABASE_REGION")
+    )
+    assert (
+        DynamoDBBaseUserTable.Meta.billing_mode
+        == DynamoDBBaseAccessTokenTable.Meta.billing_mode
+        == config.get("DATABASE_BILLING_MODE").value
+    )
 
 
 def test_attributes(user_id):
