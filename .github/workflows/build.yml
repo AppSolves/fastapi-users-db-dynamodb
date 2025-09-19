@@ -24,7 +24,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install hatch click<8.3.0
+          pip install hatch "click<8.3.0"
           hatch env create
       - name: Lint and typecheck
         run: |
@@ -53,7 +53,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install hatch click<8.3.0
+          pip install hatch "click<8.3.0"
       - name: Build and publish on PyPI
         env:
           HATCH_INDEX_USER: ${{ secrets.HATCH_INDEX_USER }}
