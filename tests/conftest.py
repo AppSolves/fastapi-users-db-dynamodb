@@ -1,3 +1,4 @@
+import hashlib
 import uuid
 from typing import Any
 
@@ -83,3 +84,13 @@ def user_id() -> UUID4:
         UUID4: The random UUIDv4 user id.
     """
     return uuid.uuid4()
+
+
+def hash_string(string: str) -> str:
+    """A simple function that returns the SHA256 hash of a given string.
+    Args:
+        string (str): The string to hash.
+    Returns:
+        str: The SHA256 hash of the string.
+    """
+    return hashlib.sha256(string.encode("utf-8")).hexdigest()

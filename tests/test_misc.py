@@ -4,8 +4,10 @@ from aiopynamodb.models import Model
 from fastapi_users_db_dynamodb import DynamoDBBaseUserTable, config
 from fastapi_users_db_dynamodb._generics import classproperty
 from fastapi_users_db_dynamodb.access_token import DynamoDBBaseAccessTokenTable
-from fastapi_users_db_dynamodb.attributes import GUID
+from fastapi_users_db_dynamodb.attributes import GUID, TransformingUnicodeAttribute
 from fastapi_users_db_dynamodb.tables import delete_tables, ensure_tables_exist
+
+from .conftest import hash_string
 
 
 class NotAModel:
@@ -22,6 +24,9 @@ class IncompleteModel(Model):
 
 class ValidModel(Model):
     """A class representing a valid `Model`."""
+
+    attr = TransformingUnicodeAttribute(transform=str.lower)
+    attr2 = TransformingUnicodeAttribute(transform=hash_string)
 
     class Meta:
         """The required `Meta` definitions for PynamoDB.
@@ -128,3 +133,12 @@ def test_attributes(user_id):
 
     assert id.deserialize(None) is None
     assert user_id == id.deserialize(user_id)
+
+    assert ValidModel().attr is None
+    model = ValidModel(attr="TEST", attr2="TEST")
+    assert model.attr == "test"
+    model.attr = "ANOTHER TEST"
+    assert model.attr == "another test"
+    assert model.attr2 == hash_string("TEST")
+    model.attr2 = "ANOTHER TEST"
+    assert model.attr2 == hash_string("ANOTHER TEST")
