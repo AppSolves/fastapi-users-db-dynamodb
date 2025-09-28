@@ -1,7 +1,7 @@
 from enum import StrEnum
 from typing import Any, Literal, TypedDict
 
-__version__ = "1.0.3"
+__version__ = "1.0.4"
 
 
 # Right now, only ON-DEMAND/PAY_PER_REQUEST mode is supported!
