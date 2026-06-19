@@ -7,10 +7,6 @@ check_untyped_defs = true
 asyncio_mode = "strict"
 asyncio_default_fixture_loop_scope = "function"
 addopts = "--ignore=test_build.py"
-filterwarnings = [
-    "ignore::DeprecationWarning:.*datetime.datetime.utcnow.*",
-    "ignore::DeprecationWarning:.*botocore.*",
-]
 
 [tool.ruff]
 
@@ -30,51 +26,48 @@ path = "fastapi_users_db_dynamodb/config.py"
 [tool.hatch.envs.default]
 installer = "uv"
 dependencies = [
-    "as-aiopynamodb>=1.0.1",
-    "pytest",
-    "pytest-asyncio",
-    "black",
-    "mypy",
-    "pytest-cov",
-    "pytest-mock",
-    "asynctest",
-    "httpx",
-    "asgi_lifespan",
-    "ruff",
-    "moto[all]",
-    "types-aiobotocore",
+    "as-aiopynamodb>=1.0.4",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "black>=26.5.1",
+    "mypy>=2.1.0",
+    "pytest-cov>=7.1.0",
+    "pytest-mock>=3.15.1",
+    "httpx>=0.28.1",
+    "asgi-lifespan>=2.1.0",
+    "ruff>=0.15.18",
+    "moto[all]>=5.2.2",
+    "types-aiobotocore>=3.7.0",
 ]
 
 [tool.hatch.envs.default.scripts]
 test = "pytest --cov=fastapi_users_db_dynamodb/ --cov-report=term-missing --cov-fail-under=100"
 test-cov-xml = "pytest --cov=fastapi_users_db_dynamodb/ --cov-report=xml --cov-fail-under=100"
 lint = [
-  "ruff format . ",
-  "ruff check --fix .",
-  "mypy fastapi_users_db_dynamodb/",
+    "ruff format . ",
+    "ruff check --fix .",
+    "mypy fastapi_users_db_dynamodb/",
 ]
 lint-check = [
-  "ruff format --check .",
-  "ruff check .",
-  "mypy fastapi_users_db_dynamodb/",
+    "ruff format --check .",
+    "ruff check .",
+    "mypy fastapi_users_db_dynamodb/",
 ]
 
 [tool.hatch.build.targets.sdist]
-support-legacy = true  # Create setup.py
+support-legacy = true # Create setup.py
 
 [build-system]
-requires = ["hatchling", "hatch-regex-commit", "click<8.3.0"]
+requires = ["hatchling>=1.30.1", "hatch-regex-commit>=0.0.4"]
 build-backend = "hatchling.build"
 
 [project]
 name = "fastapi-users-db-dynamodb"
-authors = [
-    { name = "Kaan Gönüldinc", email = "contact@appsolves.dev" },
-]
+authors = [{ name = "Kaan Gönüldinc", email = "contact@appsolves.dev" }]
 description = "FastAPI Users database adapter for AWS DynamoDB"
 readme = "README.md"
 license = "Apache-2.0"
-license-files = [ "LICENSE" ]
+license-files = ["LICENSE"]
 dynamic = ["version"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
@@ -88,10 +81,7 @@ classifiers = [
     "Topic :: Internet :: WWW/HTTP :: Session",
 ]
 requires-python = ">=3.11"
-dependencies = [
-    "fastapi-users >= 14.0.0",
-    "as-aiopynamodb>=1.0.1",
-]
+dependencies = ["fastapi-users>=15.0.5", "as-aiopynamodb>=1.0.4"]
 
 [project.urls]
 Documentation = "https://fastapi-users.github.io/fastapi-users"

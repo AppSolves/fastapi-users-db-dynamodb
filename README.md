@@ -21,7 +21,7 @@
 
 **Documentation**: <a href="https://fastapi-users.github.io/fastapi-users/" target="_blank">https://fastapi-users.github.io/fastapi-users/</a>
 
-**Source Code**: <a href="https://github.com/fastapi-users/fastapi-users" target="_blank">https://github.com/fastapi-users/fastapi-users</a>
+**Source Code**: <a href="https://github.com/AppSolves/fastapi-users-db-dynamodb" target="_blank">https://github.com/AppSolves/fastapi-users-db-dynamodb</a>
 
 ---
 
@@ -45,7 +45,7 @@ hatch run test
 
 ### Format the code
 
-Execute the following command to apply `isort` and `black` formatting:
+Execute the following command to apply Ruff formatting/checks and run MyPy:
 
 ```bash
 hatch run lint
